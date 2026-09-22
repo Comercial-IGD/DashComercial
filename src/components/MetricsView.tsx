@@ -31,6 +31,8 @@ interface Props<R extends Row, K extends string> {
   absences: AbsenceIndex;
   range: { from?: string; to?: string };
   singlePerson: boolean;
+  pendingCodes: Set<string>;
+  onPending: (code: string) => void;
 }
 
 const fmtDec = (v: number | null) => (v === null ? '—' : v.toLocaleString('pt-BR', { maximumFractionDigits: 1 }));
@@ -211,6 +213,11 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
                     <tr key={g.name}>
                       <td>
                         {tableMode === 'seller' ? r.seller : r.leader}
+                        {tableMode === 'seller' && p.pendingCodes.has(g.name) && (
+                          <button className="warn" title="Há lançamentos para corrigir. Ver pendências." onClick={() => p.onPending(g.name)}>
+                            ⚠
+                          </button>
+                        )}
                         <small>
                           {labelPeriod(dates[0], p.calendar)} — {labelPeriod(dates.at(-1)!, p.calendar)} · {[...new Set(g.items.map((x) => x.team))].join(', ')}
                           {tableMode === 'seller' && ` · Líder: ${r.leader}`}

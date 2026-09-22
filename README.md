@@ -8,6 +8,7 @@ Next.js + Supabase + Vercel.
   Levantadas atendidas → Com venda, com taxa de passagem, comparação com o período anterior e destaque da maior perda.
 - **SDR** e **Closers**: indicadores, taxas, evolução, ranking com pódio do top 3 e tabela por pessoa/líder.
 - **Pessoas**: linha do tempo de cada integrante nos papéis SDR/closer e ausências no período.
+- **Pendências**: erros de lançamento por líder e pessoa, com link direto para a linha da planilha e mensagem de cobrança pronta.
 - **Status (RH)**: RH/admin registram os dias em que a pessoa não atuou (day off, problema de internet etc.).
 
 ## Arquitetura
@@ -27,7 +28,7 @@ Next.js + Supabase + Vercel.
 
 ## Configuração
 1. `.env.local` a partir de `.env.example`.
-2. No SQL Editor do Supabase, rodar `schema.sql` e depois `migrations/002_sdr_status_auth.sql`.
+2. No SQL Editor do Supabase, rodar `schema.sql` e depois as migrações de `supabase/migrations/` em ordem (002, 003).
 3. Supabase → Authentication → URL Configuration: incluir a URL local e a da Vercel em *Redirect URLs*.
 4. Entrar uma vez no dash com o seu e-mail e depois se tornar admin:
    ```sql

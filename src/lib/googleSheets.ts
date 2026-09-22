@@ -28,16 +28,23 @@ export const ROSTER_SPREADSHEET_ID = '1uK_C5pR1p8TTMlniSKOWAISfSSVvzPuEaCb828gdT
 export const ROSTER_SHEET_ID = 187997157;
 
 const CLOSER_HEADERS = ['AGENDAS DISP', 'AGENDADOS', 'CONFIRMADOS', 'COMPARECERAM', 'LEVANTADAS DE MAO SOLICITADAS', 'LEVANTADAS ATENDIDAS', 'LEVANTADA C VENDA', 'HEADCOUNTS'];
+const CLOSER_FIELDS = ['Agendas disp.', 'Agendados', 'Confirmados', 'Compareceram', 'Levantadas solicitadas', 'Levantadas atendidas', 'Levantada c/ venda', 'Headcounts'];
 const SDR_HEADERS = ['LIGACOES REALIZADAS', 'ATENDERAM', 'AGENDAS CRIADAS HOJE', 'AGENDADOS PARA HOJE', 'COMPARECERAM', 'HEADCOUNTS'];
+const SDR_FIELDS = ['Ligações realizadas', 'Atenderam', 'Agendas criadas hoje', 'Agendados para hoje', 'Compareceram', 'Headcounts'];
+const ABSENCE_WORDS = /^(FERIADO|LUTO|FOLGA|DAY ?OFF|ATESTADO|FERIAS|FALTA|AUSENTE|AFASTAD[OA]|LICENCA|DOENTE|TREINAMENTO)\b/;
 const COMMERCIAL_YEAR_START = Date.UTC(2025, 11, 31);
 
-function norm(v: unknown) {
+export function norm(v: unknown) {
   return String(v ?? '')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toUpperCase()
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+export function nameTokens(v: string) {
+  return norm(v).replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter((t) => t.length > 1);
 }
 
 function code(v: unknown) {
@@ -109,12 +116,8 @@ export async function fetchRoster(): Promise<RosterPerson[]> {
   return people;
 }
 
-function serialToDate(serial: number) {
-  return new Date(Date.UTC(1899, 11, 30) + serial * 86400000).toISOString().slice(0, 10);
-}
-
 function parseDate(raw: unknown) {
-  if (typeof raw === 'number' && Number.isInteger(raw)) return serialToDate(raw);
+  if (typeof raw === 'number' && Number.isInteger(raw)) return new Date(Date.UTC(1899, 11, 30) + raw * 86400000).toISOString().slice(0, 10);
   const m = String(raw).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : undefined;
 }
@@ -124,49 +127,117 @@ function commercialWeek(date: string) {
   return 'SEMANA ' + String(n).padStart(2, '0');
 }
 
-type Block = { kind: 'closer' | 'sdr'; offset: number; columns: number[] } | null;
+const br = (d: string) => d.split('-').reverse().join('/');
+
+interface SelectedSheet {
+  title: string;
+  rawTitle: string;
+  sheetId: number;
+  rowCount: number;
+  person: RosterPerson;
+}
+
+// Aba "Nome - SDR" sem código: só associa se o nome casar com exatamente uma pessoa do cadastro.
+function matchByName(title: string, roster: RosterPerson[]) {
+  const tokens = nameTokens(title.replace(/\bSDR\b/gi, ' '));
+  if (!tokens.length) return { person: undefined, candidates: 0 };
+  const found = roster.filter((p) => p.code && tokens.every((t) => nameTokens(p.seller).includes(t)));
+  return { person: found.length === 1 ? found[0] : undefined, candidates: found.length };
+}
 
 export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) {
   const sheets = await sheetsClient();
   const ss = await sheets.spreadsheets.get({
     spreadsheetId: source.id,
-    fields: 'properties(title,timeZone),sheets(properties(title,gridProperties(rowCount)))',
+    fields: 'properties(title,timeZone),sheets(properties(sheetId,title,gridProperties(rowCount)))',
   });
   const sourceName = ss.data.properties?.title || source.id;
+  const owner = (sourceName.split(' - ')[1] || '').trim();
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: ss.data.properties?.timeZone || 'America/Sao_Paulo' });
   const closerRows: DailyRow[] = [];
   const sdrRows: SdrRow[] = [];
   const errors: string[] = [];
   const issues: SyncIssue[] = [];
+  const link = (sheetId: number, row?: number) =>
+    `https://docs.google.com/spreadsheets/d/${source.id}/edit#gid=${sheetId}${row ? `&range=B${row}` : ''}`;
+  const who = (p: RosterPerson) => ({ seller: p.seller, sellerCode: p.code, leader: p.leader, source: sourceName });
 
-  const eligible = source.kind === 'leader' ? roster.filter((p) => p.leaderCode === source.leaderCode) : roster;
-
-  const selected: { title: string; rowCount: number; person: RosterPerson }[] = [];
+  const selected: SelectedSheet[] = [];
   for (const s of ss.data.sheets || []) {
-    const title = s.properties?.title || '';
-    const m = title.match(/-\s*(V\d{3,4})\s*$/i);
-    if (!m) continue;
-    const person = eligible.find((p) => p.code === code(m[1]));
-    if (!person) continue;
-    const short = norm(title.slice(0, m.index)).replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
-    const full = norm(person.seller).split(' ');
-    const knownNeto = person.code === 'V555' && norm(title) === 'JOSE BERNARDINO(NETO) - V555';
-    if (!knownNeto && !short.every((t) => full.includes(t))) {
-      issues.push({ source: sourceName, seller: title, date: 'Cadastro', reason: 'Nome da aba diverge do cadastro para este código; aba excluída.' });
+    const rawTitle = s.properties?.title || '';
+    const title = rawTitle.trim();
+    const sheetId = s.properties?.sheetId ?? 0;
+    const rowCount = s.properties?.gridProperties?.rowCount || 1000;
+    const m = title.match(/-\s*(V\d{2,4})\s*$/i);
+
+    if (m) {
+      const person = roster.find((p) => p.code === code(m[1]));
+      if (!person) continue;
+      const short = nameTokens(title.slice(0, m.index).replace(/\bSDR\b/gi, ' '));
+      const full = nameTokens(person.seller);
+      if (!short.every((t) => full.includes(t))) {
+        issues.push({
+          kind: 'cadastro',
+          ...who(person),
+          date: 'Cadastro',
+          field: 'Nome da aba',
+          sheetValue: title,
+          expected: person.seller,
+          url: link(sheetId),
+          reason: `Nome da aba "${title}" difere do cadastro "${person.seller}" para o código ${person.code}. Os dados foram considerados pelo código; corrigir a aba ou o cadastro.`,
+        });
+      }
+      selected.push({ title, rawTitle, sheetId, rowCount, person });
       continue;
     }
-    selected.push({ title, rowCount: s.properties?.gridProperties?.rowCount || 1000, person });
+
+    if (/\bSDR\b/i.test(title) && !/^(GERAL|RANKING)/i.test(title)) {
+      const { person, candidates } = matchByName(title, roster);
+      const suggestion = title.replace(/\s*-?\s*SDR\s*$/i, '').trim();
+      if (!nameTokens(suggestion).length) continue;
+      if (person) {
+        issues.push({
+          kind: 'renomear_aba',
+          ...who(person),
+          date: 'Aba',
+          field: 'Nome da aba',
+          sheetValue: title,
+          expected: `${suggestion} - ${person.code}`,
+          url: link(sheetId),
+          reason: `Aba sem código de vendedor. Associada a ${person.seller} pelo nome; renomear para "${suggestion} - ${person.code}".`,
+        });
+        selected.push({ title, rawTitle, sheetId, rowCount, person });
+      } else {
+        issues.push({
+          kind: 'renomear_aba',
+          seller: title,
+          source: sourceName,
+          date: 'Aba',
+          field: 'Nome da aba',
+          sheetValue: title,
+          expected: `${suggestion} - Vxxx`,
+          url: link(sheetId),
+          reason:
+            candidates > 1
+              ? `Aba sem código e o nome corresponde a ${candidates} pessoas do cadastro; dados não considerados. Renomear para "Nome - Vxxx".`
+              : 'Aba sem código e o nome não corresponde a ninguém ativo no cadastro; dados não considerados. Renomear para "Nome - Vxxx".',
+        });
+      }
+    }
   }
 
   if (source.kind === 'leader') {
-    eligible
+    roster
+      .filter((p) => p.leaderCode === source.leaderCode)
       .filter((p) => !p.code || !selected.some((s) => s.person.code === p.code))
       .forEach((p) =>
         issues.push({
-          source: sourceName,
-          seller: p.seller,
+          kind: 'cadastro',
+          ...who(p),
           date: 'Cadastro',
-          reason: p.code ? 'Integrante ativo sem aba correspondente na planilha de seu líder.' : 'Integrante ativo sem código no cadastro; dados não associados.',
+          reason: p.code
+            ? `Integrante ativo sem aba na planilha do líder. Criar a aba "${p.seller.split(' ')[0]} - ${p.code}".`
+            : 'Integrante ativo sem código no cadastro; dados não associados.',
         }),
       );
   }
@@ -175,69 +246,115 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
 
   const batch = await sheets.spreadsheets.values.batchGet({
     spreadsheetId: source.id,
-    ranges: selected.map((s) => `'${s.title.replace(/'/g, "''")}'!A1:Z${s.rowCount}`),
+    ranges: selected.map((s) => `'${s.rawTitle.replace(/'/g, "''")}'!B1:J${s.rowCount}`),
     valueRenderOption: 'UNFORMATTED_VALUE',
     dateTimeRenderOption: 'SERIAL_NUMBER',
   });
 
   selected.forEach((sheet, si) => {
-    const seller = sheet.title.trim();
     const p = sheet.person;
+    const tab = sheet.title;
     let week = '';
-    let block: Block = null;
+    let block: { kind: 'closer' | 'sdr'; columns: number[] } | null = null;
+    const blanks: string[] = [];
+    let firstBlankRow = 0;
 
     (batch.data.valueRanges?.[si]?.values || []).forEach((row, i) => {
-      const cells = row.map(norm);
-      const weekCell = cells.find((c) => /^SEMANA\s+\d+/.test(c));
-      if (weekCell) {
-        week = 'SEMANA ' + String(Number(weekCell.match(/\d+/)![0])).padStart(2, '0');
+      const first = norm(row[0]);
+      if (/^SEMANA\s+\d+/.test(first)) {
+        week = 'SEMANA ' + String(Number(first.match(/\d+/)![0])).padStart(2, '0');
         block = null;
         return;
       }
-
-      const dataIdx = cells.indexOf('DATA');
-      if (dataIdx >= 0) {
+      if (first === 'DATA') {
+        const cells = row.map(norm);
         if (cells.includes('LIGACOES REALIZADAS')) {
           const columns = SDR_HEADERS.map((h) => cells.indexOf(h));
-          if (columns[0] < 0 || columns[5] < 0) errors.push(`${seller} linha ${i + 1}: bloco SDR sem Ligações ou Headcounts.`);
-          else block = { kind: 'sdr', offset: dataIdx, columns };
+          if (columns[0] < 0 || columns[5] < 0) errors.push(`${tab} linha ${i + 1}: bloco SDR sem Ligações ou Headcounts.`);
+          else block = { kind: 'sdr', columns };
         } else if (cells.includes('AGENDAS DISP')) {
           const columns = CLOSER_HEADERS.map((h) => cells.indexOf(h));
-          if (columns[3] < 0 || columns[7] < 0) errors.push(`${seller} linha ${i + 1}: bloco diário sem Compareceram ou Headcounts.`);
-          else block = { kind: 'closer', offset: dataIdx, columns };
+          if (columns[3] < 0 || columns[7] < 0) errors.push(`${tab} linha ${i + 1}: bloco diário sem Compareceram ou Headcounts.`);
+          else block = { kind: 'closer', columns };
         } else block = null;
         return;
       }
 
-      const current = block as Block;
-      if (!current) return;
-      const raw = row[current.offset];
-      const first = cells[current.offset] || '';
-      if (raw === '' || raw == null || /^(TOTAL|RESUMO|MEDIA)/.test(first)) return;
+      const current = block as { kind: 'closer' | 'sdr'; columns: number[] } | null;
+      if (!current || row[0] === '' || row[0] == null || /^(TOTAL|RESUMO|MEDIA)/.test(first)) return;
+      const url = link(sheet.sheetId, i + 1);
 
-      const date = parseDate(raw);
-      if (!date) {
-        issues.push({ source: sourceName, seller, date: 'Linha ' + (i + 1), reason: 'Data inválida; registro não incluído nos totais.' });
+      // Recados/observações escritos na coluna de data não são registros.
+      const looksLikeDate = typeof row[0] === 'number' ? row[0] > 40000 : /^\s*\d{1,2}\/\d{1,2}/.test(String(row[0]));
+      if (!looksLikeDate) return;
+      const date = parseDate(row[0]);
+      if (!date || new Date(date).toISOString().slice(0, 10) !== date) {
+        issues.push({ kind: 'data', ...who(p), date: `Linha ${i + 1}`, field: 'Data', sheetValue: String(row[0]), url, reason: `Data inválida na aba ${tab}; registro não incluído nos totais.` });
         return;
       }
       if (date > today) return;
-      if (new Date(date).toISOString().slice(0, 10) !== date || !periodFor(date, DEFAULT_CALENDAR)) {
-        issues.push({ source: sourceName, seller, date: 'Linha ' + (i + 1), reason: 'Data fora do calendário comercial; registro não incluído nos totais.' });
+      if (!periodFor(date, DEFAULT_CALENDAR)) {
+        issues.push({ kind: 'data', ...who(p), date: br(date), sheetDate: date, url, reason: 'Data fora do calendário comercial; registro não incluído nos totais.' });
         return;
       }
 
-      const headers = current.kind === 'sdr' ? SDR_HEADERS : CLOSER_HEADERS;
-      const values: (number | null)[] = current.columns.map((idx) => {
-        const v = idx < 0 ? null : row[idx];
-        return v === '' || v == null ? null : v;
-      });
-      if (values.every((v) => v === null)) return;
-      values.forEach((v, j) => {
-        if (v !== null && (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0)) {
-          issues.push({ source: sourceName, seller, date, reason: `${headers[j]}: valor não numérico ou inválido; indicador marcado como não informado.` });
-          values[j] = null;
+      const fields = current.kind === 'sdr' ? SDR_FIELDS : CLOSER_FIELDS;
+      const raw = current.columns.map((idx) => (idx < 0 ? '' : row[idx]));
+      if (raw.every((v) => v === '' || v == null)) return;
+
+      const absence = raw.find((v) => typeof v === 'string' && ABSENCE_WORDS.test(norm(v)));
+      if (absence !== undefined) {
+        issues.push({
+          kind: 'ausencia_planilha',
+          ...who(p),
+          date: br(date),
+          sheetDate: date,
+          sheetValue: String(absence),
+          url,
+          reason: `A planilha indica "${String(absence).trim()}" em ${br(date)}. Dia fora dos totais; registrar a ausência na aba Status (RH).`,
+        });
+        return;
+      }
+
+      const values: (number | null)[] = raw.map((v, j) => {
+        if (v === '' || v == null) {
+          blanks.push(`${br(date)} (${fields[j]})`);
+          firstBlankRow ||= i + 1;
+          return 0;
         }
+        if (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0) return v;
+        issues.push({
+          kind: 'valor_invalido',
+          ...who(p),
+          date: br(date),
+          sheetDate: date,
+          field: fields[j],
+          sheetValue: String(v),
+          expected: 'Número inteiro ≥ 0',
+          url,
+          reason: `${fields[j]} = "${String(v)}" não é um número válido; indicador marcado como não informado.`,
+        });
+        return null;
       });
+
+      const rule = (field: number, limit: number, msg: string) => {
+        const v = values[field];
+        const max = values[limit];
+        if (v !== null && max !== null && v > max) {
+          issues.push({
+            kind: 'regra',
+            ...who(p),
+            date: br(date),
+            sheetDate: date,
+            field: fields[field],
+            sheetValue: String(v),
+            expected: `≤ ${max} (${fields[limit]})`,
+            url,
+            reason: `${fields[field]} = ${v}, mas ${fields[limit]} = ${max}. ${msg}`,
+          });
+          values[field] = null;
+        }
+      };
 
       const base = {
         date,
@@ -250,30 +367,34 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
         week: week || commercialWeek(date),
         status: 'Ativo',
         product: p.product,
+        origin: { owner, url },
       };
 
       if (current.kind === 'closer') {
-        if (values[6] !== null && values[5] !== null && values[6] > values[5]) {
-          issues.push({ source: sourceName, seller, date, reason: 'Levantadas com venda excedem atendidas; quantidade com venda marcada como não informada.' });
-          values[6] = null;
-        }
+        rule(6, 5, 'Levantadas com venda não podem exceder as atendidas.');
         const r = { type: 'daily', ...base } as DailyRow;
         METRIC_KEYS.forEach((k, j) => (r[k] = values[j]));
         closerRows.push(r);
       } else {
-        if (values[1] !== null && values[0] !== null && values[1] > values[0]) {
-          issues.push({ source: sourceName, seller, date, reason: 'Atenderam excede ligações realizadas; atenderam marcado como não informado.' });
-          values[1] = null;
-        }
-        if (values[4] !== null && values[3] !== null && values[4] > values[3]) {
-          issues.push({ source: sourceName, seller, date, reason: 'Compareceram excede agendados para o dia; compareceram marcado como não informado.' });
-          values[4] = null;
-        }
+        rule(1, 0, 'Atenderam não pode exceder as ligações realizadas.');
+        rule(4, 3, 'Compareceram não pode exceder os agendados para o dia.');
         const r = { type: 'sdr', ...base } as SdrRow;
         SDR_KEYS.forEach((k, j) => (r[k] = values[j]));
         sdrRows.push(r);
       }
     });
+
+    if (blanks.length) {
+      issues.push({
+        kind: 'em_branco',
+        ...who(p),
+        date: 'Vários dias',
+        sheetValue: `${blanks.length} campos em branco`,
+        expected: 'Preencher com 0 quando não houver',
+        url: link(sheet.sheetId, firstBlankRow),
+        reason: `${blanks.length} campos em branco na aba ${tab} foram considerados 0: ${blanks.slice(0, 8).join(', ')}${blanks.length > 8 ? '…' : ''}`,
+      });
+    }
   });
 
   if (errors.length) {

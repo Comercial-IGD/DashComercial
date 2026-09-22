@@ -46,6 +46,8 @@ interface BaseRow {
   week: string;
   status: string;
   product: string;
+  // Só na coleta: dono da planilha de origem e link da linha (não vai para o banco).
+  origin?: { owner: string; url: string };
 }
 
 export interface DailyRow extends BaseRow, Record<MetricKey, number | null> {
@@ -63,10 +65,33 @@ export interface CommercialPeriod {
   end: string;
 }
 
+export const ISSUE_KINDS = {
+  regra: 'Erro de lançamento',
+  valor_invalido: 'Valor inválido',
+  ausencia_planilha: 'Registrar ausência no RH',
+  em_branco: 'Campos em branco',
+  divergencia: 'Divergência entre planilhas',
+  papel_duplicado: 'SDR e closer no mesmo dia',
+  renomear_aba: 'Renomear aba',
+  cadastro: 'Cadastro',
+  data: 'Data inválida',
+  outro: 'Outro',
+} as const;
+
+export type IssueKind = keyof typeof ISSUE_KINDS;
+
 export interface SyncIssue {
+  kind: IssueKind;
   source: string;
   seller: string;
-  date: string;
+  sellerCode?: string;
+  leader?: string;
+  date: string; // data do registro ou referência ("Cadastro", "Linha N")
+  sheetDate?: string;
+  field?: string;
+  sheetValue?: string;
+  expected?: string;
+  url?: string;
   reason: string;
 }
 

@@ -1,5 +1,5 @@
 import { DEFAULT_CALENDAR } from './calendar';
-import type { AttendanceStatus, DailyRow, DashboardData, RosterEntry, SdrRow } from './types';
+import type { AttendanceStatus, DailyRow, DashboardData, RosterEntry, SdrRow, SyncIssue } from './types';
 
 const CLOSERS = ['Ana Martins', 'Bruno Lima', 'Camila Rocha', 'Diego Alves', 'Elisa Costa', 'Felipe Dias'];
 const SDRS = ['Gabriela Nunes', 'Heitor Souza', 'Isabela Prado', 'João Ribeiro'];
@@ -89,5 +89,15 @@ export function buildDemoData(): DashboardData {
     { id: 3, sellerCode: 'DEMOS1', start: '2026-09-15', end: '2026-09-15', reason: 'day_off', note: null },
   ];
 
-  return { rows, sdrRows, roster, statuses, calendar: DEFAULT_CALENDAR, issues: [] };
+  const src = 'FL - EXEMPLO - TIME - 2026';
+  const issues: SyncIssue[] = [
+    { kind: 'regra', source: src, seller: 'Heitor Souza', sellerCode: 'DEMOS1', leader: leader(1), date: '03/09/2026', sheetDate: '2026-09-03', field: 'Compareceram', sheetValue: '5', expected: '≤ 3 (Agendados para hoje)', url: 'https://docs.google.com/spreadsheets', reason: 'Compareceram = 5, mas Agendados para hoje = 3.' },
+    { kind: 'regra', source: src, seller: 'Heitor Souza', sellerCode: 'DEMOS1', leader: leader(1), date: '08/09/2026', sheetDate: '2026-09-08', field: 'Atenderam', sheetValue: '70', expected: '≤ 64 (Ligações realizadas)', reason: 'Atenderam = 70, mas Ligações realizadas = 64.' },
+    { kind: 'valor_invalido', source: src, seller: 'Gabriela Nunes', sellerCode: 'DEMOS0', leader: leader(0), date: '10/09/2026', sheetDate: '2026-09-10', field: 'Atenderam', sheetValue: '´8', expected: 'Número inteiro ≥ 0', reason: 'Atenderam = "´8" não é um número válido.' },
+    { kind: 'ausencia_planilha', source: src, seller: 'Camila Rocha', sellerCode: 'DEMO2', leader: leader(2), date: '04/09/2026', sheetDate: '2026-09-04', sheetValue: 'feriado', reason: 'A planilha indica "feriado"; registrar no RH.' },
+    { kind: 'divergencia', source: `${src} × FL - OUTRO - SDR`, seller: 'Isabela Prado', sellerCode: 'DEMOS2', leader: leader(2), date: '05/09/2026', sheetDate: '2026-09-05', field: 'Agendados para o dia', sheetValue: 'Agendados para o dia: 1 (OUTRO) × 4 (EXEMPLO)', expected: 'Valor da planilha de EXEMPLO (líder atual)', reason: 'Lançamento diferente entre planilhas.' },
+    { kind: 'renomear_aba', source: src, seller: 'João Ribeiro', sellerCode: 'DEMOS3', leader: leader(3), date: 'Aba', field: 'Nome da aba', sheetValue: 'João Ribeiro - SDR', expected: 'João Ribeiro - V1300', reason: 'Aba sem código de vendedor.' },
+  ];
+
+  return { rows, sdrRows, roster, statuses, calendar: DEFAULT_CALENDAR, issues };
 }

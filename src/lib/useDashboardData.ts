@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabaseBrowser } from './supabase/client';
 import { DEFAULT_CALENDAR } from './calendar';
-import type { AttendanceStatus, DailyRow, DashboardData, RosterEntry, SdrRow } from './types';
+import { ISSUE_KINDS, type AttendanceStatus, type DailyRow, type DashboardData, type RosterEntry, type SdrRow, type SyncIssue } from './types';
 
 const PAGE = 1000;
 
@@ -48,12 +48,12 @@ export function useDashboardData(enabled: boolean) {
     setError(null);
     try {
       const sb = supabaseBrowser();
-      const [metrics, sdr, statuses, calendarRes, issuesRes, rosterRes] = await Promise.all([
+      const [metrics, sdr, statuses, issues, calendarRes, rosterRes] = await Promise.all([
         fetchAll('daily_metrics', 'date'),
         fetchAll('sdr_daily_metrics', 'date'),
         fetchAll('attendance_status', 'start_date'),
+        fetchAll('sync_issues', 'id'),
         sb.from('commercial_calendar').select('*').order('start_date'),
-        sb.from('sync_issues').select('*').order('id').limit(2000),
         sb.from('roster').select('*').order('seller_name'),
       ]);
 
@@ -107,7 +107,22 @@ export function useDashboardData(enabled: boolean) {
         calendar: calendarRes.data?.length
           ? calendarRes.data.map((p) => ({ id: p.id, name: p.name, start: p.start_date, end: p.end_date }))
           : DEFAULT_CALENDAR,
-        issues: (issuesRes.data || []).map((i) => ({ source: i.source, seller: i.seller, date: i.ref_date, reason: i.reason })),
+        issues: issues.map(
+          (i): SyncIssue => ({
+            kind: ((i.kind as string) in ISSUE_KINDS ? i.kind : 'outro') as SyncIssue['kind'],
+            source: i.source as string,
+            seller: i.seller as string,
+            sellerCode: (i.seller_code as string) ?? undefined,
+            leader: (i.leader as string) ?? undefined,
+            date: i.ref_date as string,
+            sheetDate: (i.sheet_date as string) ?? undefined,
+            field: (i.field as string) ?? undefined,
+            sheetValue: (i.sheet_value as string) ?? undefined,
+            expected: (i.expected as string) ?? undefined,
+            url: (i.url as string) ?? undefined,
+            reason: i.reason as string,
+          }),
+        ),
       });
       setLoadedAt(new Date());
     } catch (e) {

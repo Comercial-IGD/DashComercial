@@ -158,3 +158,17 @@
 
 @media(max-width:900px){.dash .stage{grid-template-columns:90px 1fr}.dash .stage:first-child{padding-left:104px}.dash .status-form .wide{grid-column:span 2}}
 @media(max-width:520px){.dash .podium{grid-template-columns:1fr}.dash .podium-card.gold{transform:none}.dash .rankings{grid-template-columns:1fr}.dash .stage,.dash .stage:first-child{grid-template-columns:1fr;padding-left:0}.dash .pass{flex-direction:row;gap:6px;align-items:baseline}.dash .status-form .wide{grid-column:auto}}
+
+/* Pendências */
+.dash .tabs .tab-badge{margin-left:6px}
+.dash .card-button{text-align:left;cursor:pointer;font:inherit;color:inherit}
+.dash .card-button.selected{border-color:#74ddca;background:#16283b}
+.dash .check{flex-direction:row;align-items:center;gap:8px;white-space:nowrap}
+.dash .check input{width:auto}
+.dash td.wrap{white-space:normal;min-width:180px;max-width:360px;text-align:left}
+.dash td a{color:#89e8d5}
+.dash button.warn{margin-left:8px;padding:0 6px;border-color:#a55b1c;background:#3a2410;color:#ffc58a;font-size:12px}
+.dash .badge.kind-regra,.dash .badge.kind-valor_invalido{background:#4d1d1d;color:#ffb0a3}
+.dash .badge.kind-divergencia,.dash .badge.kind-papel_duplicado{background:#3d2a4d;color:#dcb8ff}
+.dash .badge.kind-renomear_aba,.dash .badge.kind-cadastro{background:#1d3a4d;color:#9fd8f5}
+.dash .badge.kind-ausencia_planilha{background:#18413a;color:#89e8d5}

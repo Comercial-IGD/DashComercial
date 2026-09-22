@@ -14,9 +14,10 @@ import { Funnel } from '@/components/Funnel';
 import { Login } from '@/components/Login';
 import { MetricsView, type RateDef } from '@/components/MetricsView';
 import { PeopleView } from '@/components/PeopleView';
+import { PendingView } from '@/components/PendingView';
 import { StatusAdmin } from '@/components/StatusAdmin';
 
-type Tab = 'overview' | 'sdr' | 'closers' | 'people' | 'status';
+type Tab = 'overview' | 'sdr' | 'closers' | 'people' | 'pending' | 'status';
 
 const WEEKDAYS = [
   ['1', 'Segunda'],
@@ -67,6 +68,18 @@ export default function DashboardPage() {
     return { closers: applyFilters(data.rows, filters, data.calendar, r), sdrs: applyFilters(data.sdrRows, filters, data.calendar, r) };
   }, [range?.from, range?.to, filters, data]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const issues = useMemo(() => {
+    const from = range?.from ?? filters.from;
+    const to = range?.to ?? filters.to;
+    return data.issues.filter(
+      (i) =>
+        (!filters.leader || i.leader === filters.leader) &&
+        (!filters.person || i.sellerCode === filters.person) &&
+        (!i.sheetDate || ((!from || i.sheetDate >= from) && (!to || i.sheetDate <= to))),
+    );
+  }, [data.issues, filters, range?.from, range?.to]);
+  const pendingCodes = useMemo(() => new Set(issues.map((i) => i.sellerCode).filter(Boolean) as string[]), [issues]);
+
   if (!ready) return <div className="dash"><p className="empty">Carregando…</p></div>;
   if (!demo && !session) return <div className="dash"><Login onDemo={() => setDemo(buildDemoData())} /></div>;
   if (!demo && !role)
@@ -95,6 +108,7 @@ export default function DashboardPage() {
     ['sdr', 'SDR'],
     ['closers', 'Closers'],
     ['people', 'Pessoas'],
+    ['pending', 'Pendências'],
     ...(canEditStatus ? ([['status', 'Status (RH)']] as [Tab, string][]) : []),
   ];
 
@@ -125,6 +139,7 @@ export default function DashboardPage() {
           {tabs.map(([id, label]) => (
             <button key={id} className={tab === id ? 'active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
               {label}
+              {id === 'pending' && issues.length > 0 && <span className="badge tab-badge">{issues.length}</span>}
             </button>
           ))}
         </nav>
@@ -243,6 +258,11 @@ export default function DashboardPage() {
             absences={absences}
             range={rangeView}
             singlePerson={singlePerson}
+            pendingCodes={pendingCodes}
+            onPending={(code) => {
+              setFilters({ ...EMPTY_FILTERS, person: code });
+              setTab('pending');
+            }}
           />
         )}
 
@@ -259,6 +279,11 @@ export default function DashboardPage() {
             absences={absences}
             range={rangeView}
             singlePerson={singlePerson}
+            pendingCodes={pendingCodes}
+            onPending={(code) => {
+              setFilters({ ...EMPTY_FILTERS, person: code });
+              setTab('pending');
+            }}
           />
         )}
 
@@ -273,22 +298,7 @@ export default function DashboardPage() {
           />
         )}
 
-        {data.issues.length > 0 && tab !== 'status' && (
-          <details className="panel">
-            <summary>Qualidade dos dados • {data.issues.length} inconsistências nas origens</summary>
-            {data.issues.map((x, i) => (
-              <p className="muted" key={i}>
-                <b>
-                  {x.seller} · {x.date}
-                </b>
-                <br />
-                {x.reason}
-                <br />
-                {x.source}
-              </p>
-            ))}
-          </details>
-        )}
+        {tab === 'pending' && <PendingView issues={issues} />}
       </main>
     </div>
   );
