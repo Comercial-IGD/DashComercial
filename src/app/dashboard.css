@@ -1,0 +1,73 @@
+.dash{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif;color:#edf3fc;background:#0a1220;font-size:16px;min-height:100vh}
+.dash *{box-sizing:border-box}
+.dash button,.dash input,.dash select{font:inherit}
+.dash button,.dash select,.dash input{border:1px solid #304159;border-radius:8px;background:#142135;color:#e9f1fa;padding:10px 13px}
+.dash button{cursor:pointer}
+.dash button:hover{background:#243851}
+.dash button:disabled{opacity:.6;cursor:default}
+.dash button:focus-visible,.dash select:focus-visible,.dash input:focus-visible{outline:2px solid #6be2d0;outline-offset:3px}
+.dash header{min-height:82px;border-bottom:1px solid #243146;display:flex;align-items:center;gap:24px;padding:20px 4%}
+.dash .brand{display:flex;align-items:center;gap:13px;text-decoration:none;color:#96a7bf;font-size:14px;letter-spacing:.08em}
+.dash .brand b{color:#fff;font-size:18px;letter-spacing:0}
+.dash .mark{background:#74ddca;color:#0b1926;display:grid;place-items:center;width:34px;height:34px;border-radius:9px;font-size:24px;font-weight:800}
+.dash .divider{color:#40516a}
+.dash .scope{font-size:12px;color:#8093ad;margin-left:auto;letter-spacing:.12em}
+.dash header button{border-color:#55c8b5;color:#89e8d5}
+.dash main{max-width:1600px;margin:auto;padding:36px 4%}
+.dash .title,.dash .sectionbar,.dash .panelhead{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.dash .title{margin-bottom:25px}
+.dash h1{font-size:32px;letter-spacing:-.035em;margin:7px 0}
+.dash h2{font-size:19px;margin:4px 0 14px;font-weight:600}
+.dash h3{font-size:15px;color:#aabbd0;font-weight:500}
+.dash .eyebrow{font-size:12px;letter-spacing:.13em;color:#8ea4c0;margin:0 0 8px}
+.dash .actions{display:flex;gap:8px}
+.dash .notice{background:#182735;border:1px solid #355367;border-radius:9px;padding:13px 16px;color:#b8d8e5;font-size:14px;margin-bottom:22px}
+.dash .filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px;background:#101c2c;padding:20px;border:1px solid #253348;border-radius:12px}
+.dash label{display:flex;flex-direction:column;gap:8px;color:#a9b9ce;font-size:14px;min-width:0}
+.dash select{max-width:100%;min-width:0;width:100%}
+.dash input{min-width:0;width:100%}
+.dash .sectionbar{margin:24px 0 18px}
+.dash .sectionbar p{font-size:14px;color:#a8bad1}
+.dash .segmented{display:flex;background:#111d2e;border:1px solid #26364b;padding:4px;border-radius:9px;gap:3px}
+.dash .segmented button{font-size:14px;background:transparent;border:0;padding:8px 13px}
+.dash .segmented button.active{background:#30465f;color:#fff}
+.dash .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px}
+.dash .card{padding:20px 22px;background:#121f31;border:1px solid #27374d;border-radius:12px}
+.dash .card small{font-size:14px;color:#aabbd1;display:block;min-height:32px}
+.dash .card strong{font-size:32px;font-weight:650;letter-spacing:-.03em}
+.dash .card .line{height:3px;margin-top:16px;width:35px;background:#557fac;border-radius:2px}
+.dash .card:nth-child(4) .line,.dash .card:nth-child(7) .line{background:#70e2ca}
+.dash .middle{display:grid;grid-template-columns:2fr 1fr;gap:22px}
+.dash .panel{background:#111d2d;border:1px solid #29374c;border-radius:12px;padding:24px;margin-bottom:22px;min-width:0}
+.dash .panelhead{margin-bottom:15px}
+.dash .panelhead h2{margin-bottom:0}
+.dash .panelhead select{font-size:14px;width:auto}
+.dash .conversion strong{font-size:54px;letter-spacing:-.04em;color:#77e0c9;display:block;margin:24px 0 15px}
+.dash .meter{height:7px;background:#26374b;border-radius:6px;overflow:hidden}
+.dash .meter i{height:100%;background:#77e0c9;display:block}
+.dash .muted,.dash .footnote{color:#92a6c0;font-size:14px;line-height:1.6}
+.dash .footnote{border-top:1px solid #29384d;padding-top:14px}
+.dash .rankings{display:grid;grid-template-columns:1fr 1fr;gap:50px}
+.dash .rankrow{display:flex;gap:14px;align-items:center;position:relative;min-height:48px;border-bottom:1px solid #233348;font-size:14px}
+.dash .rankrow em{font-style:normal;color:#748eaa;width:22px}
+.dash .rankrow strong{margin-left:auto;color:#82e2d0}
+.dash .rankrow .bar{position:absolute;left:36px;bottom:0;height:2px;background:#527b9c}
+.dash .tablewrap{overflow:auto;max-height:540px}
+.dash table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:14px}
+.dash th{text-align:right;background:#18273a;color:#9db2ca;font-weight:500;position:sticky;top:0}
+.dash td,.dash th{padding:15px 14px;border-bottom:1px solid #273449}
+.dash td{text-align:right}
+.dash td:first-child,.dash th:first-child{text-align:left}
+.dash td:first-child{font-weight:600}
+.dash td small{font-weight:400;color:#8ca4bf;font-size:12px;display:block;margin-top:5px}
+.dash .empty{padding:48px 20px;text-align:center;color:#9eb2cb;line-height:1.7}
+.dash #chart{height:230px;overflow:auto}
+.dash .bars{display:flex;height:100%;align-items:stretch;gap:12px;min-width:100%;padding-top:20px}
+.dash .barcol{flex:1;min-width:54px;display:flex;flex-direction:column;justify-content:end;align-items:center;gap:8px;font-size:12px;color:#a7bdd2}
+.dash .barcol i{width:65%;max-width:56px;background:linear-gradient(#78dbc9,#3e7fa5);border-radius:5px 5px 0 0;min-height:2px}
+.dash .barcol span{min-height:33px;text-align:center}
+.dash footer{display:flex;justify-content:space-between;color:#7288a3;font-size:12px;padding:4px 0 20px;max-width:1600px;margin:auto}
+.dash .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+.dash details.panel > summary{cursor:pointer}
+@media(max-width:900px){.dash .scope{display:none}.dash header button{margin-left:auto}.dash .title{align-items:start;flex-direction:column}.dash .middle{grid-template-columns:1fr}.dash .filters,.dash .cards{grid-template-columns:repeat(2,1fr)}.dash .rankings{gap:24px}.dash .panelhead{flex-wrap:wrap}}
+@media(max-width:520px){.dash main{padding:24px 15px}.dash header{padding:15px}.dash .brand{gap:7px;font-size:12px}.dash .brand b{font-size:15px}.dash .scope,.dash .divider{display:none}.dash header button{font-size:12px;padding:9px}.dash h1{font-size:27px}.dash .filters{padding:14px;gap:12px}.dash .cards{gap:10px}.dash .card{padding:15px}.dash .card small{font-size:14px;min-height:40px}.dash .rankings{grid-template-columns:1fr}.dash .sectionbar{align-items:start;flex-direction:column}.dash .panel{padding:18px}.dash .actions{flex-wrap:wrap}.dash footer{gap:12px;flex-direction:column}}
