@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Closers — Dashboard comercial",
-  description: "Operação comercial de closers por período comercial.",
+  title: "Dashboard comercial",
+  description: "Funil comercial de SDRs e closers por período comercial.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

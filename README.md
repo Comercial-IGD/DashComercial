@@ -1,40 +1,42 @@
-# Dash Comercial — Closers
+# Dash Comercial — SDRs e Closers
 
-Dashboard comercial de closers, migrado do protótipo em Google Apps Script para
+Dashboard comercial (funil SDR → closer), migrado do protótipo em Google Apps Script para
 Next.js + Supabase + Vercel.
 
+## Visões
+- **Visão geral**: funil único Ligações → Atenderam → Agendas criadas → Agendados → Compareceram →
+  Levantadas atendidas → Com venda, com taxa de passagem, comparação com o período anterior e destaque da maior perda.
+- **SDR** e **Closers**: indicadores, taxas, evolução, ranking com pódio do top 3 e tabela por pessoa/líder.
+- **Pessoas**: linha do tempo de cada integrante nos papéis SDR/closer e ausências no período.
+- **Status (RH)**: RH/admin registram os dias em que a pessoa não atuou (day off, problema de internet etc.).
+
 ## Arquitetura
-
-- **Frontend**: Next.js 16 (App Router) + React, hospedado na Vercel. Lê os dados
-  diretamente do Supabase (chave `anon`, somente leitura via RLS). [src/app/page.tsx](src/app/page.tsx)
-- **Banco**: Supabase (Postgres). Schema em [supabase/schema.sql](supabase/schema.sql):
-  - `roster` — cadastro de closers ativos (equivalente à aba de cadastro).
-  - `daily_metrics` — base diária única por vendedor/data (equivalente às abas B:J dos closers).
-  - `commercial_calendar` — meses comerciais (mesma regra de fechamento do coletor original).
-  - `sync_issues` — inconsistências detectadas na última sincronização.
-- **Coleta**: rota `GET /api/sync` ([src/app/api/sync/route.ts](src/app/api/sync/route.ts))
-  lê as seis planilhas de closers e o cadastro via Google Sheets API (service account),
-  reconcilia duplicidades e grava no Supabase. Protegida por `CRON_SECRET` e agendada
-  via Vercel Cron ([vercel.json](vercel.json)).
-
-A lógica de validação/reconciliação (calendário comercial, checagem de cadastro,
-conciliação de cópias divergentes) foi portada linha a linha do Apps Script original
-para [src/lib/googleSheets.ts](src/lib/googleSheets.ts) e [src/app/api/sync/route.ts](src/app/api/sync/route.ts).
+- **Frontend**: Next.js 16 (App Router), 100% cliente, lê o Supabase com a sessão do usuário. [src/app/page.tsx](src/app/page.tsx)
+- **Acesso**: login por link mágico (Supabase Auth). Só entra quem está em `app_users` (`viewer`, `rh`, `admin`);
+  a segurança é garantida por RLS no banco.
+- **Banco** (Supabase): [supabase/schema.sql](supabase/schema.sql) + [supabase/migrations/002_sdr_status_auth.sql](supabase/migrations/002_sdr_status_auth.sql)
+  - `roster` — cadastro ativo (produto, cargo atual, líder).
+  - `daily_metrics` — base diária de closers; `sdr_daily_metrics` — base diária de SDRs.
+  - `attendance_status` — ausências lançadas pelo RH.
+  - `app_users` — quem acessa e com qual papel.
+  - `commercial_calendar`, `sync_issues`.
+- **Coleta**: `GET /api/sync` ([src/app/api/sync/route.ts](src/app/api/sync/route.ts)) lê o cadastro e as planilhas
+  ([src/lib/googleSheets.ts](src/lib/googleSheets.ts)) via service account, detecta se cada bloco é de SDR ou de closer
+  pelo cabeçalho (a pessoa pode trocar de papel) e grava no Supabase. Agendada via Vercel Cron ([vercel.json](vercel.json)).
+  Produtos coletados: `ACTIVE_PRODUCTS` (hoje só `FL`).
 
 ## Configuração
-
-1. Copie `.env.example` para `.env.local` e preencha:
-   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-   - `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY` (conta de serviço com acesso
-     leitor às 6 planilhas de closers e à planilha de cadastro)
-   - `CRON_SECRET` (qualquer string aleatória)
-2. Rode `supabase/schema.sql` no SQL Editor do projeto Supabase.
-3. `npm install && npm run dev` para desenvolvimento local.
-4. Deploy na Vercel com as mesmas variáveis de ambiente configuradas no projeto.
-5. Dispare a primeira sincronização manualmente: `GET /api/sync` com header
-   `Authorization: Bearer <CRON_SECRET>`.
+1. `.env.local` a partir de `.env.example`.
+2. No SQL Editor do Supabase, rodar `schema.sql` e depois `migrations/002_sdr_status_auth.sql`.
+3. Supabase → Authentication → URL Configuration: incluir a URL local e a da Vercel em *Redirect URLs*.
+4. Entrar uma vez no dash com o seu e-mail e depois se tornar admin:
+   ```sql
+   insert into app_users (user_id, email, role)
+   select id, email, 'admin' from auth.users where email = 'SEU_EMAIL';
+   ```
+   Os demais usuários: mesmo comando, com `role` `rh` ou `viewer`.
+5. Compartilhar o cadastro e as 8 planilhas (6 de líder + 2 de SDR) com a service account como Leitor.
+6. Primeira sincronização: `GET /api/sync` com `Authorization: Bearer <CRON_SECRET>`.
 
 ## Modo demonstração
-
-O botão "Explorar demonstração" no dashboard carrega dados fictícios em memória,
-sem depender do Supabase — útil para revisar a interface antes de ligar a coleta real.
+Na tela de login, "Ver demonstração" carrega dados fictícios em memória (inclusive a aba de RH) sem gravar nada.

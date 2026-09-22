@@ -2,428 +2,278 @@
 
 import { useMemo, useState } from 'react';
 import './dashboard.css';
-import { labelPeriod, periodFor } from '@/lib/calendar';
-import { buildDemoRows } from '@/lib/demoData';
-import { bucket, conversion, groupBy, metricValue, sum, type GroupMode } from '@/lib/metrics';
-import { METRIC_KEYS, METRIC_LABELS, type DailyRow, type MetricKey } from '@/lib/types';
+import { absenceIndex } from '@/lib/attendance';
+import { buildDemoData } from '@/lib/demoData';
+import { applyFilters, EMPTY_FILTERS, selectedRange, type Filters } from '@/lib/filters';
+import { previousRange } from '@/lib/metrics';
+import { supabaseBrowser } from '@/lib/supabase/client';
+import { METRIC_KEYS, METRIC_LABELS, SDR_KEYS, SDR_LABELS, type DashboardData, type MetricKey, type SdrKey } from '@/lib/types';
+import { useAuth } from '@/lib/useAuth';
 import { useDashboardData } from '@/lib/useDashboardData';
+import { Funnel } from '@/components/Funnel';
+import { Login } from '@/components/Login';
+import { MetricsView, type RateDef } from '@/components/MetricsView';
+import { PeopleView } from '@/components/PeopleView';
+import { StatusAdmin } from '@/components/StatusAdmin';
+
+type Tab = 'overview' | 'sdr' | 'closers' | 'people' | 'status';
 
 const WEEKDAYS = [
-  { value: '1', label: 'Segunda' },
-  { value: '2', label: 'Terça' },
-  { value: '3', label: 'Quarta' },
-  { value: '4', label: 'Quinta' },
-  { value: '5', label: 'Sexta' },
-  { value: '6', label: 'Sábado' },
-  { value: '0', label: 'Domingo' },
+  ['1', 'Segunda'],
+  ['2', 'Terça'],
+  ['3', 'Quarta'],
+  ['4', 'Quinta'],
+  ['5', 'Sexta'],
+  ['6', 'Sábado'],
+  ['0', 'Domingo'],
 ];
 
-const fmt = (n: number) => n.toLocaleString('pt-BR');
+const SDR_RATES: RateDef<SdrKey>[] = [
+  { id: 'contato', label: 'Taxa de contato', num: 'atenderam', den: 'ligacoes', minBase: 50, hint: 'Atenderam ÷ ligações realizadas' },
+  { id: 'agendamento', label: 'Taxa de agendamento', num: 'agendasCriadas', den: 'atenderam', minBase: 20, hint: 'Agendas criadas ÷ atenderam' },
+  { id: 'show', label: 'Comparecimento', num: 'compareceram', den: 'agendadosHoje', minBase: 10, hint: 'Compareceram ÷ agendados para o dia' },
+];
 
-interface Filters {
-  source: string;
-  month: string;
-  week: string;
-  seller: string;
-  status: string;
-  weekday: string;
-  from: string;
-  to: string;
-}
-
-const EMPTY_FILTERS: Filters = { source: '', month: '', week: '', seller: '', status: '', weekday: '', from: '', to: '' };
+const CLOSER_RATES: RateDef<MetricKey>[] = [
+  { id: 'show', label: 'Comparecimento', num: 'calls', den: 'agendados', minBase: 10, hint: 'Compareceram ÷ agendados' },
+  { id: 'conversao', label: 'Conversão de levantadas', num: 'comVenda', den: 'atendidas', minBase: 10, hint: 'Levantadas com venda ÷ levantadas atendidas' },
+];
 
 export default function DashboardPage() {
-  const { data, loading, error, reload } = useDashboardData();
-  const [demoRows, setDemoRows] = useState<DailyRow[] | null>(null);
+  const { session, role, ready } = useAuth();
+  const [demo, setDemo] = useState<DashboardData | null>(null);
+  const live = useDashboardData(!!session && !!role && !demo);
+  const [tab, setTab] = useState<Tab>('overview');
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [mode, setMode] = useState<GroupMode>('monthly');
-  const [tableMode, setTableMode] = useState<'seller' | 'leader'>('seller');
-  const [metric, setMetric] = useState<MetricKey>('calls');
-  const [rankPeriod, setRankPeriod] = useState('');
 
-  const isDemo = demoRows !== null;
-  const rows = isDemo ? demoRows! : data.rows;
-  const calendar = data.calendar;
-
+  const data = demo ?? live.data;
+  const canEditStatus = !!demo || role === 'rh' || role === 'admin';
   const setFilter = (k: keyof Filters, v: string) => setFilters((f) => ({ ...f, [k]: v }));
-  const clearFilters = () => setFilters(EMPTY_FILTERS);
 
-  const options = (key: 'team' | 'week' | 'seller' | 'status') => [...new Set(rows.map((r) => (key === 'team' ? r.team : r[key])))].sort();
+  const allRows = useMemo(() => [...data.rows, ...data.sdrRows], [data]);
+  const options = (pick: (r: (typeof allRows)[number]) => string) => [...new Set(allRows.map(pick))].filter(Boolean).sort();
+  const people = useMemo(
+    () => [...new Map(allRows.map((r) => [r.sellerId, r.seller])).entries()].sort((a, b) => a[1].localeCompare(b[1])),
+    [allRows],
+  );
 
-  const filtered = useMemo(() => {
-    return rows.filter(
-      (r) =>
-        (!filters.source || r.team === filters.source) &&
-        (!filters.month || periodFor(r.date, calendar)?.id === filters.month) &&
-        (!filters.week || r.week === filters.week) &&
-        (!filters.seller || r.seller === filters.seller) &&
-        (!filters.status || r.status === filters.status) &&
-        (!filters.weekday || String(new Date(r.date).getUTCDay()) === filters.weekday) &&
-        (!filters.from || r.date >= filters.from) &&
-        (!filters.to || r.date <= filters.to),
+  const absences = useMemo(() => absenceIndex(data.statuses), [data.statuses]);
+  const range = selectedRange(filters, data.calendar);
+  const closers = useMemo(() => applyFilters(data.rows, filters, data.calendar), [data.rows, filters, data.calendar]);
+  const sdrs = useMemo(() => applyFilters(data.sdrRows, filters, data.calendar), [data.sdrRows, filters, data.calendar]);
+  const prev = useMemo(() => {
+    if (!range || filters.week) return null;
+    const r = previousRange(range.from, range.to);
+    return { closers: applyFilters(data.rows, filters, data.calendar, r), sdrs: applyFilters(data.sdrRows, filters, data.calendar, r) };
+  }, [range?.from, range?.to, filters, data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!ready) return <div className="dash"><p className="empty">Carregando…</p></div>;
+  if (!demo && !session) return <div className="dash"><Login onDemo={() => setDemo(buildDemoData())} /></div>;
+  if (!demo && !role)
+    return (
+      <div className="dash">
+        <main className="login">
+          <div className="panel login-card">
+            <h1>Acesso pendente</h1>
+            <p className="muted">Sua conta ({session?.user.email}) ainda não foi liberada. Peça ao administrador do dash para cadastrar seu e-mail.</p>
+            <button onClick={() => supabaseBrowser().auth.signOut()}>Sair</button>
+          </div>
+        </main>
+      </div>
     );
-  }, [rows, filters, calendar]);
 
-  const totals = useMemo(() => sum(filtered), [filtered]);
-  const has = filtered.length > 0;
-  const c = conversion(totals);
-  const cPartial = totals.missing?.atendidas || totals.missing?.comVenda;
-
-  const rangeLabel = useMemo(() => {
-    if (filters.from && filters.to && filters.from > filters.to) return 'A data inicial deve ser anterior à data final.';
-    if (!has) return 'Nenhum registro para esta seleção';
-    const dates = filtered.map((r) => r.date).sort();
-    const sellers = new Set(filtered.map((r) => r.sellerId)).size;
-    return `${labelPeriod(dates[0], calendar)} — ${labelPeriod(dates[dates.length - 1], calendar)} · ${sellers} closers`;
-  }, [filtered, has, filters.from, filters.to, calendar]);
-
-  const periods = useMemo(() => [...new Set(filtered.map((r) => bucket(r, mode, calendar)))].sort(), [filtered, mode, calendar]);
-  const effectiveRankPeriod = periods.includes(rankPeriod) ? rankPeriod : '';
-
-  const chartGroups = useMemo(() => groupBy(filtered, (r) => bucket(r, mode, calendar)).sort((a, b) => a.name.localeCompare(b.name)), [filtered, mode, calendar]);
-  const chartMax = Math.max(1, ...chartGroups.map((g) => g[metric] ?? 0));
-
-  const rankRows = useMemo(
-    () => (effectiveRankPeriod ? filtered.filter((r) => bucket(r, mode, calendar) === effectiveRankPeriod) : filtered),
-    [filtered, effectiveRankPeriod, mode, calendar],
-  );
-  const rankCalls = useMemo(
-    () =>
-      groupBy(rankRows, (r) => r.sellerId)
-        .sort((a, b) => (b.calls ?? -1) - (a.calls ?? -1) || a.name.localeCompare(b.name))
-        .slice(0, 5),
-    [rankRows],
-  );
-  const rankHead = useMemo(
-    () =>
-      groupBy(rankRows, (r) => r.sellerId)
-        .sort((a, b) => (b.headcounts ?? -1) - (a.headcounts ?? -1) || a.name.localeCompare(b.name))
-        .slice(0, 5),
-    [rankRows],
-  );
-  const maxCalls = Math.max(1, ...rankCalls.map((r) => r.calls ?? 0));
-  const maxHead = Math.max(1, ...rankHead.map((r) => r.headcounts ?? 0));
-
-  const tableGroups = useMemo(
-    () =>
-      groupBy(filtered, (r) => (tableMode === 'seller' ? r.sellerId : r.leader)).sort((a, b) => (b.calls ?? -1) - (a.calls ?? -1)),
-    [filtered, tableMode],
-  );
-
-  const notice = isDemo
-    ? 'DEMONSTRAÇÃO • Dados fictícios para explorar o dashboard. Nenhuma planilha conectada.'
-    : error
-      ? `Não foi possível atualizar: ${error} ${rows.length ? 'Última base válida mantida.' : 'Nenhum conjunto foi exibido.'}`
-      : loading
+  const notice = demo
+    ? 'DEMONSTRAÇÃO • Dados fictícios. Nada é gravado no banco.'
+    : live.error
+      ? `Não foi possível atualizar: ${live.error}`
+      : live.loading && !live.loadedAt
         ? 'Consultando a base de dados…'
-        : rows.length
-          ? `BASE SUPABASE • ${fmt(rows.length)} registros carregados · Somente leitura · Verificação a cada 5 minutos.`
-          : 'SEM DADOS • Ainda não há registros no Supabase, ou explore a demonstração.';
+        : `Atualizado às ${live.loadedAt?.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) ?? '—'} · ${data.rows.length.toLocaleString('pt-BR')} registros de closers · ${data.sdrRows.length.toLocaleString('pt-BR')} de SDR · atualização automática a cada 5 minutos`;
+
+  const tabs: [Tab, string][] = [
+    ['overview', 'Visão geral'],
+    ['sdr', 'SDR'],
+    ['closers', 'Closers'],
+    ['people', 'Pessoas'],
+    ...(canEditStatus ? ([['status', 'Status (RH)']] as [Tab, string][]) : []),
+  ];
+
+  const rangeView = { from: range?.from ?? filters.from ?? undefined, to: range?.to ?? filters.to ?? undefined };
+  const singlePerson = !!filters.person;
 
   return (
     <div className="dash">
       <header>
         <a className="brand" href="#">
-          <span className="mark">C</span> COMERCIAL <span className="divider">/</span> <b>Closers</b>
+          <span className="mark">C</span> COMERCIAL <span className="divider">/</span> <b>Performance</b>
         </a>
-        <span className="scope">OPERAÇÃO DE CLOSERS</span>
-        <button onClick={() => reload()} disabled={loading}>
-          {loading ? 'Atualizando…' : 'Atualizar agora'}
-        </button>
-      </header>
-      <main>
-        <div className="title">
-          <div>
-            <p className="eyebrow">VISÃO DA OPERAÇÃO</p>
-            <h1>Performance comercial</h1>
-          </div>
-          <div className="actions">
-            <button
-              onClick={() => {
-                setDemoRows(isDemo ? null : buildDemoRows());
-                clearFilters();
-              }}
-            >
-              {isDemo ? 'Sair da demonstração' : 'Explorar demonstração'}
+        <span className="scope">{demo ? 'DEMONSTRAÇÃO' : `${session?.user.email} · ${role === 'admin' ? 'Admin' : role === 'rh' ? 'RH' : 'Leitura'}`}</span>
+        {demo ? (
+          <button onClick={() => setDemo(null)}>Sair da demonstração</button>
+        ) : (
+          <>
+            <button onClick={() => live.reload()} disabled={live.loading}>
+              {live.loading ? 'Atualizando…' : 'Atualizar agora'}
             </button>
-            <button onClick={clearFilters}>Limpar filtros</button>
-          </div>
-        </div>
+            <button onClick={() => supabaseBrowser().auth.signOut()}>Sair</button>
+          </>
+        )}
+      </header>
+
+      <main>
+        <nav className="tabs" aria-label="Visões">
+          {tabs.map(([id, label]) => (
+            <button key={id} className={tab === id ? 'active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
+              {label}
+            </button>
+          ))}
+        </nav>
 
         <div className="notice" role="status">
           {notice}
         </div>
 
-        <section className="filters" aria-label="Filtros">
-          <label>
-            Time
-            <select value={filters.source} onChange={(e) => setFilter('source', e.target.value)}>
-              <option value="">Todos</option>
-              {options('team').map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Mês comercial
-            <select value={filters.month} onChange={(e) => setFilter('month', e.target.value)}>
-              <option value="">Todos os meses</option>
-              {calendar.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Semana
-            <select value={filters.week} onChange={(e) => setFilter('week', e.target.value)}>
-              <option value="">Todos</option>
-              {options('week').map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Vendedor
-            <select value={filters.seller} onChange={(e) => setFilter('seller', e.target.value)}>
-              <option value="">Todos</option>
-              {options('seller').map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Status
-            <select value={filters.status} onChange={(e) => setFilter('status', e.target.value)}>
-              <option value="">Todos</option>
-              {options('status').map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Dia da semana
-            <select value={filters.weekday} onChange={(e) => setFilter('weekday', e.target.value)}>
-              <option value="">Todos os dias</option>
-              {WEEKDAYS.map((w) => (
-                <option key={w.value} value={w.value}>
-                  {w.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            De
-            <input type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} />
-          </label>
-          <label>
-            Até
-            <input type="date" value={filters.to} onChange={(e) => setFilter('to', e.target.value)} />
-          </label>
-        </section>
-
-        <div className="sectionbar">
-          <p>{rangeLabel}</p>
-          <div className="segmented" aria-label="Agrupamento">
-            {(['daily', 'weekly', 'monthly'] as GroupMode[]).map((m) => (
-              <button
-                key={m}
-                className={mode === m ? 'active' : ''}
-                aria-pressed={mode === m}
-                onClick={() => {
-                  setMode(m);
-                  setRankPeriod('');
-                }}
-              >
-                {m === 'daily' ? 'Diário' : m === 'weekly' ? 'Semanal' : 'Mensal'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <section className="cards" aria-label="Indicadores">
-          {METRIC_KEYS.map((k) => (
-            <article className="card" key={k}>
-              <small>{METRIC_LABELS[k]}</small>
-              <strong>{has ? metricValue(totals, k) : '—'}</strong>
-              <div className="line" />
-            </article>
-          ))}
-        </section>
-
-        <section className="middle">
-          <article className="panel evolution">
-            <div className="panelhead">
-              <div>
-                <p className="eyebrow">RITMO COMERCIAL</p>
-                <h2>Evolução dos resultados</h2>
-              </div>
-              <label className="sr-only" htmlFor="metric">
-                Indicador do gráfico
-              </label>
-              <select id="metric" value={metric} onChange={(e) => setMetric(e.target.value as MetricKey)}>
-                {METRIC_KEYS.map((k) => (
-                  <option key={k} value={k}>
-                    {METRIC_LABELS[k]}
-                  </option>
+        {tab !== 'status' && (
+          <section className="filters" aria-label="Filtros">
+            <label>
+              Produto
+              <select value={filters.product} onChange={(e) => setFilter('product', e.target.value)}>
+                <option value="">Todos</option>
+                {options((r) => r.product).map((v) => (
+                  <option key={v}>{v}</option>
                 ))}
               </select>
-            </div>
-            <div id="chart">
-              {chartGroups.length ? (
-                <div className="bars">
-                  {chartGroups.map((g) => (
-                    <div className="barcol" key={g.name}>
-                      <b>{metricValue(g, metric)}</b>
-                      <i style={{ height: Math.max(2, ((g[metric] ?? 0) / chartMax) * 150) }} title={`${labelPeriod(g.name, calendar)}: ${g[metric]}`} />
-                      <span>{labelPeriod(g.name, calendar)}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="empty">
-                  Seus resultados aparecerão aqui.
-                  <br />A consulta automática está sendo preparada.
-                </p>
-              )}
-            </div>
-            <p className="muted">
-              {METRIC_LABELS[metric]} • Agrupamento {mode === 'daily' ? 'diário' : mode === 'weekly' ? 'semanal' : 'por mês comercial'}
-            </p>
-          </article>
-          <article className="panel conversion">
-            <p className="eyebrow">APOIO QUE CONVERTE</p>
-            <h2>Levantadas com venda</h2>
-            <strong>{c === null ? 'Sem base' : `${(c * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%${cPartial ? ' *' : ''}`}</strong>
-            <div className="meter">
-              <i style={{ width: `${c === null ? 0 : c * 100}%` }} />
-            </div>
-            <p>
-              {metricValue(totals, 'comVenda')} com venda / {metricValue(totals, 'atendidas')} atendidas
-            </p>
-            <p className="muted">Atendimentos com participação de apoio que influenciou a venda, independentemente da data de fechamento.</p>
-            <p className="footnote">Headcounts é um indicador independente.</p>
-          </article>
-        </section>
-
-        <section className="panel">
-          <div className="panelhead">
-            <div>
-              <p className="eyebrow">DESTAQUES DO PERÍODO</p>
-              <h2>Ranking de closers</h2>
-            </div>
+            </label>
             <label>
-              Período do ranking
-              <select value={effectiveRankPeriod} onChange={(e) => setRankPeriod(e.target.value)}>
-                <option value="">Acumulado da seleção</option>
-                {periods.map((p) => (
-                  <option key={p} value={p}>
-                    {labelPeriod(p, calendar)}
+              Time
+              <select value={filters.team} onChange={(e) => setFilter('team', e.target.value)}>
+                <option value="">Todos</option>
+                {options((r) => r.team).map((v) => (
+                  <option key={v}>{v}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Líder
+              <select value={filters.leader} onChange={(e) => setFilter('leader', e.target.value)}>
+                <option value="">Todos</option>
+                {options((r) => r.leader).map((v) => (
+                  <option key={v}>{v}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Pessoa
+              <select value={filters.person} onChange={(e) => setFilter('person', e.target.value)}>
+                <option value="">Todas</option>
+                {people.map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
                   </option>
                 ))}
               </select>
             </label>
-          </div>
-          <div className="rankings">
-            <div>
-              <h3>Calls realizadas</h3>
-              {rankCalls.length ? (
-                rankCalls.map((r, i) => (
-                  <div className="rankrow" key={r.name}>
-                    <em>{String(i + 1).padStart(2, '0')}</em>
-                    <span>{r.items[0].seller}</span>
-                    <strong>{metricValue(r, 'calls')}</strong>
-                    <i className="bar" style={{ width: `${((r.calls ?? 0) / maxCalls) * 75}%` }} />
-                  </div>
-                ))
-              ) : (
-                <p className="muted">Sem dados para este período.</p>
-              )}
+            <label>
+              Mês comercial
+              <select value={filters.month} onChange={(e) => setFilter('month', e.target.value)}>
+                <option value="">Todos os meses</option>
+                {data.calendar.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Semana
+              <select value={filters.week} onChange={(e) => setFilter('week', e.target.value)}>
+                <option value="">Todas</option>
+                {options((r) => r.week).map((v) => (
+                  <option key={v}>{v}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Dia da semana
+              <select value={filters.weekday} onChange={(e) => setFilter('weekday', e.target.value)}>
+                <option value="">Todos os dias</option>
+                {WEEKDAYS.map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="date-pair">
+              <label>
+                De
+                <input type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} />
+              </label>
+              <label>
+                Até
+                <input type="date" value={filters.to} onChange={(e) => setFilter('to', e.target.value)} />
+              </label>
             </div>
-            <div>
-              <h3>Headcounts</h3>
-              {rankHead.length ? (
-                rankHead.map((r, i) => (
-                  <div className="rankrow" key={r.name}>
-                    <em>{String(i + 1).padStart(2, '0')}</em>
-                    <span>{r.items[0].seller}</span>
-                    <strong>{metricValue(r, 'headcounts')}</strong>
-                    <i className="bar" style={{ width: `${((r.headcounts ?? 0) / maxHead) * 75}%` }} />
-                  </div>
-                ))
-              ) : (
-                <p className="muted">Sem dados para este período.</p>
-              )}
-            </div>
-          </div>
-        </section>
+            <button className="clear" onClick={() => setFilters(EMPTY_FILTERS)}>
+              Limpar filtros
+            </button>
+          </section>
+        )}
 
-        <section className="panel">
-          <div className="panelhead">
-            <h2>Resultados detalhados</h2>
-            <div className="segmented">
-              <button className={tableMode === 'seller' ? 'active' : ''} onClick={() => setTableMode('seller')}>
-                Vendedores
-              </button>
-              <button className={tableMode === 'leader' ? 'active' : ''} onClick={() => setTableMode('leader')}>
-                Líderes
-              </button>
-            </div>
-          </div>
-          <div className="tablewrap">
-            {tableGroups.length ? (
-              <table>
-                <thead>
-                  <tr>
-                    <th>{tableMode === 'seller' ? 'Vendedor' : 'Líder'} / período</th>
-                    {METRIC_KEYS.map((k) => (
-                      <th key={k}>{METRIC_LABELS[k]}</th>
-                    ))}
-                    <th>Conversão de levantadas</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tableGroups.map((g) => {
-                    const r = g.items[0];
-                    const conv = conversion(g);
-                    const dates = g.items.map((x) => x.date).sort();
-                    const teams = [...new Set(g.items.map((x) => x.team))].join(', ');
-                    const statuses = [...new Set(g.items.map((x) => x.status))].join(', ');
-                    return (
-                      <tr key={g.name}>
-                        <td>
-                          {tableMode === 'seller' ? r.seller : r.leader}
-                          <small>
-                            {labelPeriod(dates[0], calendar)} — {labelPeriod(dates[dates.length - 1], calendar)} · {teams}
-                            {tableMode === 'seller' ? ` · Líder: ${r.leader} · ${statuses} · Período acumulado` : ' · Período acumulado'}
-                          </small>
-                        </td>
-                        {METRIC_KEYS.map((k) => (
-                          <td key={k}>{metricValue(g, k)}</td>
-                        ))}
-                        <td>{conv === null ? 'Sem base' : `${(conv * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            ) : (
-              <p className="empty">Nenhum registro encontrado.</p>
-            )}
-          </div>
-        </section>
+        {tab === 'overview' && (
+          <>
+            <Funnel closers={closers} sdrs={sdrs} prev={prev} />
+            <section className="middle">
+              <MiniRole title="SDR" rows={sdrs.length} people={new Set(sdrs.map((r) => r.sellerId)).size} onOpen={() => setTab('sdr')} />
+              <MiniRole title="Closers" rows={closers.length} people={new Set(closers.map((r) => r.sellerId)).size} onOpen={() => setTab('closers')} />
+            </section>
+          </>
+        )}
 
-        {data.issues.length > 0 && (
+        {tab === 'sdr' && (
+          <MetricsView
+            eyebrow="PROSPECÇÃO"
+            rows={sdrs}
+            keys={SDR_KEYS}
+            labels={SDR_LABELS}
+            rates={SDR_RATES}
+            rankMetrics={['ligacoes', 'agendasCriadas']}
+            perDay="ligacoes"
+            calendar={data.calendar}
+            absences={absences}
+            range={rangeView}
+            singlePerson={singlePerson}
+          />
+        )}
+
+        {tab === 'closers' && (
+          <MetricsView
+            eyebrow="FECHAMENTO"
+            rows={closers}
+            keys={METRIC_KEYS}
+            labels={METRIC_LABELS}
+            rates={CLOSER_RATES}
+            rankMetrics={['calls', 'headcounts']}
+            perDay="calls"
+            calendar={data.calendar}
+            absences={absences}
+            range={rangeView}
+            singlePerson={singlePerson}
+          />
+        )}
+
+        {tab === 'people' && <PeopleView closers={closers} sdrs={sdrs} absences={absences} range={rangeView} />}
+
+        {tab === 'status' && canEditStatus && (
+          <StatusAdmin
+            roster={data.roster}
+            statuses={data.statuses}
+            demo={!!demo}
+            onSaved={(statuses) => (demo ? setDemo({ ...demo, statuses }) : live.setData((d) => ({ ...d, statuses })))}
+          />
+        )}
+
+        {data.issues.length > 0 && tab !== 'status' && (
           <details className="panel">
             <summary>Qualidade dos dados • {data.issues.length} inconsistências nas origens</summary>
             {data.issues.map((x, i) => (
@@ -440,12 +290,18 @@ export default function DashboardPage() {
           </details>
         )}
       </main>
-      <footer>
-        <span>Calendário comercial • Base diária única</span>
-        <span>
-          {fmt(filtered.length)} registros diários · {isDemo ? 'Demonstração' : 'Base Supabase'}
-        </span>
-      </footer>
     </div>
+  );
+}
+
+function MiniRole({ title, rows, people, onOpen }: { title: string; rows: number; people: number; onOpen: () => void }) {
+  return (
+    <article className="panel">
+      <p className="eyebrow">{title.toUpperCase()}</p>
+      <h2>
+        {people} {people === 1 ? 'pessoa' : 'pessoas'} · {rows.toLocaleString('pt-BR')} registros diários
+      </h2>
+      <button onClick={onOpen}>Abrir visão de {title}</button>
+    </article>
   );
 }
