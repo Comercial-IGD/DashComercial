@@ -163,8 +163,9 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
   const errors: string[] = [];
   const issues: SyncIssue[] = [];
   const link = (sheetId: number, row?: number) =>
-    // gid também na query: o fragmento (#) se perde em redirecionamentos de login do Google.
-    `https://docs.google.com/spreadsheets/d/${source.id}/edit?gid=${sheetId}${row ? `&range=B${row}` : ''}#gid=${sheetId}${row ? `&range=B${row}` : ''}`;
+    // gid na query sobrevive a redirecionamentos de login; a linha vai só no fragmento,
+    // porque "range" na query é aplicado à última aba aberta e ignora o gid.
+    `https://docs.google.com/spreadsheets/d/${source.id}/edit?gid=${sheetId}#gid=${sheetId}${row ? `&range=B${row}` : ''}`;
   const who = (p: RosterPerson) => ({ seller: p.seller, sellerCode: p.code, leader: p.leader, source: sourceName });
 
   const selected: SelectedSheet[] = [];
