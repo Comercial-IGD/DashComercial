@@ -1,5 +1,5 @@
 import { DEFAULT_CALENDAR } from './calendar';
-import type { AttendanceStatus, DailyRow, DashboardData, RosterEntry, SdrRow, SyncIssue } from './types';
+import type { AttendanceStatus, DailyRow, DashboardData, RosterEntry, SdrRow, SocialRow, SyncIssue } from './types';
 
 const CLOSERS = ['Ana Martins', 'Bruno Lima', 'Camila Rocha', 'Diego Alves', 'Elisa Costa', 'Felipe Dias'];
 const SDRS = ['Gabriela Nunes', 'Heitor Souza', 'Isabela Prado', 'João Ribeiro'];
@@ -9,6 +9,7 @@ const leader = (i: number) => (i % 2 === 0 ? 'Marina • exemplo' : 'Rafael • 
 export function buildDemoData(): DashboardData {
   const rows: DailyRow[] = [];
   const sdrRows: SdrRow[] = [];
+  const socialRows: SocialRow[] = [];
   const base = (seller: string, code: string, i: number, date: string, d: number) => ({
     date,
     seller,
@@ -76,6 +77,22 @@ export function buildDemoData(): DashboardData {
         headcounts: (d + i) % 3,
       });
     });
+    ['Lara Mendes', 'Otávio Reis'].forEach((seller, i) => {
+      const abordados = 40 + ((d * 5 + i * 11) % 30);
+      const responderam = Math.round(abordados * 0.3);
+      const agendadosHoje = 2 + ((d + i) % 4);
+      socialRows.push({
+        type: 'social',
+        ...base(seller, `DEMOSS${i}`, i, date, d),
+        product: 'INSIDER',
+        abordados,
+        responderam,
+        agendamentosCriados: Math.round(responderam * 0.4),
+        agendadosHoje,
+        calls: Math.max(0, agendadosHoje - ((d + i) % 2)),
+        headcounts: (d + i) % 2,
+      });
+    });
   }
 
   const roster: RosterEntry[] = [
@@ -99,5 +116,5 @@ export function buildDemoData(): DashboardData {
     { kind: 'renomear_aba', source: src, seller: 'João Ribeiro', sellerCode: 'DEMOS3', leader: leader(3), date: 'Aba', field: 'Nome da aba', sheetValue: 'João Ribeiro - SDR', expected: 'João Ribeiro - V1300', reason: 'Aba sem código de vendedor.' },
   ];
 
-  return { rows, sdrRows, roster, statuses, calendar: DEFAULT_CALENDAR, issues };
+  return { rows, sdrRows, socialRows, roster, statuses, calendar: DEFAULT_CALENDAR, issues };
 }

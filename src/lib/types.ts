@@ -35,6 +35,21 @@ export const SDR_LABELS: Record<SdrKey, string> = {
   headcounts: 'Headcounts',
 };
 
+export const SOCIAL_KEYS = ['abordados', 'responderam', 'agendamentosCriados', 'agendadosHoje', 'calls', 'headcounts'] as const;
+
+export type SocialKey = (typeof SOCIAL_KEYS)[number];
+
+export const SOCIAL_LABELS: Record<SocialKey, string> = {
+  abordados: 'Leads abordados',
+  responderam: 'Responderam',
+  agendamentosCriados: 'Agendamentos criados',
+  agendadosHoje: 'Agendados para o dia',
+  calls: 'Calls realizadas',
+  headcounts: 'Headcounts',
+};
+
+export const PRODUCT_LABELS: Record<string, string> = { FL: 'FL', INSIDER: 'Insider' };
+
 interface BaseRow {
   date: string; // yyyy-mm-dd
   seller: string;
@@ -56,6 +71,10 @@ export interface DailyRow extends BaseRow, Record<MetricKey, number | null> {
 
 export interface SdrRow extends BaseRow, Record<SdrKey, number | null> {
   type: 'sdr';
+}
+
+export interface SocialRow extends BaseRow, Record<SocialKey, number | null> {
+  type: 'social';
 }
 
 export interface CommercialPeriod {
@@ -134,6 +153,7 @@ export interface RosterEntry {
 export interface DashboardData {
   rows: DailyRow[];
   sdrRows: SdrRow[];
+  socialRows: SocialRow[];
   roster: RosterEntry[];
   statuses: AttendanceStatus[];
   calendar: CommercialPeriod[];

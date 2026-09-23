@@ -1,36 +1,64 @@
 import 'server-only';
 import { google, type sheets_v4 } from 'googleapis';
 import { periodFor, DEFAULT_CALENDAR } from './calendar';
-import { METRIC_KEYS, SDR_KEYS, type DailyRow, type SdrRow, type SyncIssue } from './types';
+import { METRIC_KEYS, SDR_KEYS, SOCIAL_KEYS, type DailyRow, type SdrRow, type SocialRow, type SyncIssue } from './types';
 
 export interface SourceConfig {
   id: string;
-  kind: 'leader' | 'sdr';
+  kind: 'leader' | 'sdr' | 'social';
+  product: 'FL' | 'INSIDER';
   leaderCode?: string;
 }
 
-// Planilhas de líder (closers + SDRs do líder) e planilhas exclusivas de SDR; leaderCode = dono da planilha.
+// Planilhas de líder (closers + SDRs do líder), exclusivas de SDR e de Social Selling; leaderCode = dono da planilha.
 export const SOURCES: SourceConfig[] = [
-  { id: '15ZvGFI4XCrzr09Mg37XUboO9r8GpBAYSV6X6MFF5MaM', kind: 'leader', leaderCode: 'V96' },
-  { id: '1fsOm6MMS-HyYnfVxZj7yAdGBxpBCWTKavKU0cOQjW7Q', kind: 'leader', leaderCode: 'V555' },
-  { id: '1V9ED6pCzQrwZOEoqYh-iIb1U-HzZx6SmYfBtyIMRtt8', kind: 'leader', leaderCode: 'V820' },
-  { id: '1sl6Jyd3PCUTpZnn8dN0Il6IpK1gXX2jZwCNe2fcHYlY', kind: 'leader', leaderCode: 'V1065' },
-  { id: '1YLagcrWrEE7WEG56Ldgmsyfmvkdz2i8miWx3wMVyqPI', kind: 'leader', leaderCode: 'V1047' },
-  { id: '18RqQooixW531m-u1Ti-2etzDkNkXInRcm3BJ6_0jK44', kind: 'leader', leaderCode: 'V990' },
-  { id: '1rwf53Z2raKCl9lz4qQlZjiERQ-JkkHOEFV8NYs3GcBA', kind: 'sdr', leaderCode: 'V730' },
-  { id: '13S3NA-dWgSrHi6LW-cLN2Wgqp2GrCqMZDoj3u6CDnWg', kind: 'sdr', leaderCode: 'V960' },
+  // FL
+  { id: '15ZvGFI4XCrzr09Mg37XUboO9r8GpBAYSV6X6MFF5MaM', kind: 'leader', product: 'FL', leaderCode: 'V96' }, // Orlando Ribeiro
+  { id: '1fsOm6MMS-HyYnfVxZj7yAdGBxpBCWTKavKU0cOQjW7Q', kind: 'leader', product: 'FL', leaderCode: 'V555' }, // Neto Lucena
+  { id: '1V9ED6pCzQrwZOEoqYh-iIb1U-HzZx6SmYfBtyIMRtt8', kind: 'leader', product: 'FL', leaderCode: 'V820' }, // Marcelo Ribeiro
+  { id: '1sl6Jyd3PCUTpZnn8dN0Il6IpK1gXX2jZwCNe2fcHYlY', kind: 'leader', product: 'FL', leaderCode: 'V1065' }, // Guilherme Henrique
+  { id: '1YLagcrWrEE7WEG56Ldgmsyfmvkdz2i8miWx3wMVyqPI', kind: 'leader', product: 'FL', leaderCode: 'V1047' }, // Jessica Pinheiro
+  { id: '18RqQooixW531m-u1Ti-2etzDkNkXInRcm3BJ6_0jK44', kind: 'leader', product: 'FL', leaderCode: 'V990' }, // Ana Karen
+  { id: '1rwf53Z2raKCl9lz4qQlZjiERQ-JkkHOEFV8NYs3GcBA', kind: 'sdr', product: 'FL', leaderCode: 'V730' }, // CRM - SDR - Paiva
+  { id: '13S3NA-dWgSrHi6LW-cLN2Wgqp2GrCqMZDoj3u6CDnWg', kind: 'sdr', product: 'FL', leaderCode: 'V960' }, // CRM - SDR - Luciene
+  // Insider
+  { id: '1mSmQEnJ306qD4rQh5GWo7_IBDm72xEbHHTWigMl7ers', kind: 'leader', product: 'INSIDER', leaderCode: 'V63' }, // Felipe Costa
+  { id: '1thpoOJRWPt4ByWduuMHlIHiOZ6pPOOGHUZl1MPbRq0k', kind: 'leader', product: 'INSIDER', leaderCode: 'V301' }, // Sara Alves
+  { id: '1F61LMSYUJ02hkGnwikSOksn5VnwDqlHt6b-mx-9Y9ng', kind: 'leader', product: 'INSIDER', leaderCode: 'V526' }, // Josimar Reis
+  { id: '1cM-P3sZXK7ODPWEbkh2fGiHTW9mSIdpa_ZYWk8fesZo', kind: 'leader', product: 'INSIDER', leaderCode: 'V321' }, // Adryan Lampert
+  { id: '1334XNUIxmBwQxldzMeZu79cMzu6twT00sNXnDnsjeYI', kind: 'leader', product: 'INSIDER', leaderCode: 'V717' }, // Pedro Augusto
+  { id: '1i7vT_-5qJtkMsW876AaGfy2Bt3l_3t1uawHQL9BEUZg', kind: 'leader', product: 'INSIDER', leaderCode: 'V1078' }, // Bruno Lourenço
+  { id: '1su-3liLl_YiUXzJlEdL5IzNzgQtk8Ceas-X1gVCBqjY', kind: 'leader', product: 'INSIDER', leaderCode: 'V862' }, // Michelle Gomes
+  { id: '1fHZcE0M3Qt1fUB_wcwyjOC4MAqE-SxNDnpkEPTV6Xc8', kind: 'leader', product: 'INSIDER' }, // Juliana Reis (avulsa)
+  { id: '1OhE5wD9Rg6ymIoO1w1xx_oMtumLTX_qZyi_PBuDsnvY', kind: 'sdr', product: 'INSIDER', leaderCode: 'V308' }, // CRM - SDR - Luciana
+  { id: '1EYZ6lidgD_-tJngmlhi-SlEF7v_R19r5Q5zKdnEz4e4', kind: 'sdr', product: 'INSIDER', leaderCode: 'V356' }, // CRM - SDR - Rebeca
+  { id: '1pfWHJejaP_Jq0L8nO06V3qheAb9MiCXxioPdhs0iwwg', kind: 'social', product: 'INSIDER', leaderCode: 'V356' }, // CRM - Social Selling - Rebeca
 ];
 
-export const ACTIVE_PRODUCTS = ['FL'];
+export const ACTIVE_PRODUCTS = ['FL', 'INSIDER'];
 const ACTIVE_ROLES = ['CLOSER', 'SDR'];
 
 export const ROSTER_SPREADSHEET_ID = '1uK_C5pR1p8TTMlniSKOWAISfSSVvzPuEaCb828gdTNY';
 export const ROSTER_SHEET_ID = 187997157;
 
-const CLOSER_HEADERS = ['AGENDAS DISP', 'AGENDADOS', 'CONFIRMADOS', 'COMPARECERAM', 'LEVANTADAS DE MAO SOLICITADAS', 'LEVANTADAS ATENDIDAS', 'LEVANTADA C VENDA', 'HEADCOUNTS'];
+// Cada coluna aceita os nomes usados no FL e no Insider (ex.: "Agendados" = "Agendas Pree").
+const CLOSER_HEADERS = [['AGENDAS DISP'], ['AGENDADOS', 'AGENDAS PREE'], ['CONFIRMADOS', 'AGENDAS CONFIR'], ['COMPARECERAM', 'CALL REALIZADAS'], ['LEVANTADAS DE MAO SOLICITADAS'], ['LEVANTADAS ATENDIDAS'], ['LEVANTADA C VENDA'], ['HEADCOUNTS']];
 const CLOSER_FIELDS = ['Agendas disp.', 'Agendados', 'Confirmados', 'Compareceram', 'Levantadas solicitadas', 'Levantadas atendidas', 'Levantada c/ venda', 'Headcounts'];
-const SDR_HEADERS = ['LIGACOES REALIZADAS', 'ATENDERAM', 'AGENDAS CRIADAS HOJE', 'AGENDADOS PARA HOJE', 'COMPARECERAM', 'HEADCOUNTS'];
+const SDR_HEADERS = [['LIGACOES REALIZADAS'], ['ATENDERAM'], ['AGENDAS CRIADAS HOJE'], ['AGENDADOS PARA HOJE'], ['COMPARECERAM', 'CALL REALIZADAS'], ['HEADCOUNTS']];
 const SDR_FIELDS = ['Ligações realizadas', 'Atenderam', 'Agendas criadas hoje', 'Agendados para hoje', 'Compareceram', 'Headcounts'];
+const SOCIAL_HEADERS = [['LEADS ABORDADOS'], ['RESPONDERAM'], ['AGENDAMENTOS CRIADOS HOJE'], ['AGENDADOS PARA HOJE'], ['CALL REALIZADAS', 'COMPARECERAM'], ['HEADCOUNTS']];
+const SOCIAL_FIELDS = ['Leads abordados', 'Responderam', 'Agendamentos criados hoje', 'Agendados para hoje', 'Calls realizadas', 'Headcounts'];
+// Limpa digitação comum: espaços soltos viram vazio, acento solto ("´8", "1`") sai e
+// número seguido de comentário ("3 NO-SHOW", "0 (feriado)") vale o número.
+function cleanCell(v: unknown) {
+  if (typeof v !== 'string') return v;
+  const s = v.replace(/[´`'’]/g, '').trim();
+  if (!s) return '';
+  const lead = s.match(/^(\d+)(\s|\(|$)/);
+  return lead ? Number(lead[1]) : s;
+}
+
+const columnsOf =(cells: string[], headers: string[][]) => headers.map((alts) => alts.map((h) => cells.indexOf(h)).find((i) => i >= 0) ?? -1);
 const ABSENCE_WORDS = /^(FERIADO|LUTO|FOLGA|DAY ?OFF|ATESTADO|FERIAS|FALTA|AUSENTE|AFASTAD[OA]|LICENCA|DOENTE|TREINAMENTO)\b/;
 const COMMERCIAL_YEAR_START = Date.UTC(2025, 11, 31);
 
@@ -133,6 +161,8 @@ function commercialWeek(date: string) {
 
 const br = (d: string) => d.split('-').reverse().join('/');
 
+type Block = { kind: 'closer' | 'sdr' | 'social'; columns: number[] };
+
 interface SelectedSheet {
   title: string;
   rawTitle: string;
@@ -160,7 +190,10 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: ss.data.properties?.timeZone || 'America/Sao_Paulo' });
   const closerRows: DailyRow[] = [];
   const sdrRows: SdrRow[] = [];
+  const socialRows: SocialRow[] = [];
   const errors: string[] = [];
+  // Associação por nome só entre pessoas do mesmo produto (Social Selling atende os dois).
+  const pool = source.kind === 'social' ? roster : roster.filter((p) => p.product === source.product);
   const issues: SyncIssue[] = [];
   const link = (sheetId: number, row?: number) =>
     // gid na query sobrevive a redirecionamentos de login; a linha vai só no fragmento,
@@ -198,7 +231,7 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
     }
 
     if (/\bSDR\b/i.test(title) && !/^(GERAL|RANKING)/i.test(title)) {
-      const { person, candidates } = matchByName(title, roster);
+      const { person, candidates } = matchByName(title, pool);
       const suggestion = title.replace(/\s*-?\s*SDR\s*$/i, '').trim();
       if (!nameTokens(suggestion).length) continue;
       if (person) {
@@ -248,7 +281,7 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
       );
   }
 
-  if (!selected.length) return { closerRows, sdrRows, issues, source: sourceName };
+  if (!selected.length) return { closerRows, sdrRows, socialRows, issues, source: sourceName };
 
   const batch = await sheets.spreadsheets.values.batchGet({
     spreadsheetId: source.id,
@@ -261,11 +294,14 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
     const p = sheet.person;
     const tab = sheet.title;
     let week = '';
-    let block: { kind: 'closer' | 'sdr'; columns: number[] } | null = null;
+    let block: Block | null = null;
     const blanks: string[] = [];
     let firstBlankRow = 0;
+    const values2d = batch.data.valueRanges?.[si]?.values || [];
+    // A célula B1 de cada aba diz o produto ("FL"/"INSIDER"); a planilha de Social Selling mistura os dois.
+    const tabProduct = ['FL', 'INSIDER'].find((x) => norm(values2d[0]?.[0]).startsWith(x)) ?? source.product;
 
-    (batch.data.valueRanges?.[si]?.values || []).forEach((row, i) => {
+    values2d.forEach((row, i) => {
       const first = norm(row[0]);
       if (/^SEMANA\s+\d+/.test(first)) {
         week = 'SEMANA ' + String(Number(first.match(/\d+/)![0])).padStart(2, '0');
@@ -274,19 +310,23 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
       }
       if (first === 'DATA') {
         const cells = row.map(norm);
-        if (cells.includes('LIGACOES REALIZADAS')) {
-          const columns = SDR_HEADERS.map((h) => cells.indexOf(h));
+        if (cells.includes('LEADS ABORDADOS')) {
+          const columns = columnsOf(cells, SOCIAL_HEADERS);
+          if (columns[0] < 0 || columns[5] < 0) errors.push(`${tab} linha ${i + 1}: bloco Social Selling sem Leads abordados ou Headcounts.`);
+          else block = { kind: 'social', columns };
+        } else if (cells.includes('LIGACOES REALIZADAS')) {
+          const columns = columnsOf(cells, SDR_HEADERS);
           if (columns[0] < 0 || columns[5] < 0) errors.push(`${tab} linha ${i + 1}: bloco SDR sem Ligações ou Headcounts.`);
           else block = { kind: 'sdr', columns };
         } else if (cells.includes('AGENDAS DISP')) {
-          const columns = CLOSER_HEADERS.map((h) => cells.indexOf(h));
+          const columns = columnsOf(cells, CLOSER_HEADERS);
           if (columns[3] < 0 || columns[7] < 0) errors.push(`${tab} linha ${i + 1}: bloco diário sem Compareceram ou Headcounts.`);
           else block = { kind: 'closer', columns };
         } else block = null;
         return;
       }
 
-      const current = block as { kind: 'closer' | 'sdr'; columns: number[] } | null;
+      const current = block as Block | null;
       if (!current || row[0] === '' || row[0] == null || /^(TOTAL|RESUMO|MEDIA)/.test(first)) return;
       const url = link(sheet.sheetId, i + 1);
 
@@ -304,11 +344,12 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
         return;
       }
 
-      const fields = current.kind === 'sdr' ? SDR_FIELDS : CLOSER_FIELDS;
-      const raw = current.columns.map((idx) => (idx < 0 ? '' : row[idx]));
+      const fields = current.kind === 'sdr' ? SDR_FIELDS : current.kind === 'social' ? SOCIAL_FIELDS : CLOSER_FIELDS;
+      const raw = current.columns.map((idx) => cleanCell(idx < 0 ? '' : row[idx]));
       if (raw.every((v) => v === '' || v == null)) return;
 
-      const absence = raw.find((v) => typeof v === 'string' && ABSENCE_WORDS.test(norm(v)));
+      // Palavras na célula (IMERSÃO, SEM INTERNET, VIAGEM…) são anotação de ausência do dia.
+      const absence = raw.find((v) => typeof v === 'string' && (ABSENCE_WORDS.test(norm(v)) || /[A-Z]{3,}/.test(norm(v))));
       if (absence !== undefined) {
         issues.push({
           kind: 'ausencia_planilha',
@@ -374,7 +415,7 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
         team: p.team,
         week: week || commercialWeek(date),
         status: 'Ativo',
-        product: p.product,
+        product: tabProduct,
         origin: { owner, ownerCode: source.leaderCode ?? '', url },
       };
 
@@ -383,6 +424,12 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
         const r = { type: 'daily', ...base } as DailyRow;
         METRIC_KEYS.forEach((k, j) => (r[k] = values[j]));
         closerRows.push(r);
+      } else if (current.kind === 'social') {
+        rule(1, 0, 'Responderam não pode exceder os leads abordados.');
+        rule(4, 3, 'Calls realizadas não podem exceder os agendados para o dia.');
+        const r = { type: 'social', ...base } as SocialRow;
+        SOCIAL_KEYS.forEach((k, j) => (r[k] = values[j]));
+        socialRows.push(r);
       } else {
         rule(1, 0, 'Atenderam não pode exceder as ligações realizadas.');
         // Regra de negócio: se compareceram mais pessoas que as agendadas para o dia, agendados = compareceram.
@@ -423,5 +470,5 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
   if (errors.length) {
     throw new Error(`${sourceName}: ${errors.slice(0, 4).join(' • ')}${errors.length > 4 ? ` • e mais ${errors.length - 4} inconsistências.` : ''}`);
   }
-  return { closerRows, sdrRows, issues, source: sourceName };
+  return { closerRows, sdrRows, socialRows, issues, source: sourceName };
 }
