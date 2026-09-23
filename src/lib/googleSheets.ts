@@ -301,7 +301,21 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
     let firstBlankRow = 0;
     const values2d = batch.data.valueRanges?.[si]?.values || [];
     // A célula B1 de cada aba diz o produto ("FL"/"INSIDER"); a planilha de Social Selling mistura os dois.
-    const tabProduct = ['FL', 'INSIDER'].find((x) => norm(values2d[0]?.[0]).startsWith(x)) ?? source.product;
+    const b1Product = ['FL', 'INSIDER'].find((x) => norm(values2d[0]?.[0]).startsWith(x));
+    // Nas planilhas de líder/SDR vale o produto do cadastro (abas copiadas de modelo podem trazer a B1 errada).
+    const tabProduct = source.kind === 'social' ? (b1Product ?? source.product) : p.product || source.product;
+    if (source.kind !== 'social' && b1Product && b1Product !== tabProduct) {
+      issues.push({
+        kind: 'renomear_aba',
+        ...who(p),
+        date: 'Aba',
+        field: 'Produto (B1)',
+        sheetValue: b1Product,
+        expected: tabProduct,
+        url: link(sheet.sheetId, 1),
+        reason: `A célula B1 da aba ${tab} indica ${b1Product}, mas no cadastro a pessoa é ${tabProduct}. O dash considerou ${tabProduct}; corrigir a B1.`,
+      });
+    }
 
     values2d.forEach((row, i) => {
       const first = norm(row[0]);
