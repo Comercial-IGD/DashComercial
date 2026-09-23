@@ -67,7 +67,11 @@ let client: sheets_v4.Sheets | null = null;
 async function sheetsClient() {
   if (client) return client;
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  // Aceita a chave colada com ou sem aspas, com "\n" literal ou quebras reais.
+  const key = process.env.GOOGLE_PRIVATE_KEY?.trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/\\n/g, '\n')
+    .replace(/\r/g, '');
   if (!email || !key) throw new Error('Credenciais da service account do Google ausentes.');
   const auth = new google.auth.JWT({ email, key, scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
   await auth.authorize();
