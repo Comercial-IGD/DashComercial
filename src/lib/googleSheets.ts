@@ -346,19 +346,20 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
       const rule = (field: number, limit: number, msg: string) => {
         const v = values[field];
         const max = values[limit];
+        // Mesmo tratamento do Compareceram: o limite é elevado ao valor lançado.
         if (v !== null && max !== null && v > max) {
+          values[limit] = v;
           issues.push({
-            kind: 'regra',
+            kind: 'ajuste',
             ...who(p),
             date: br(date),
             sheetDate: date,
-            field: fields[field],
-            sheetValue: String(v),
-            expected: `≤ ${max} (${fields[limit]})`,
+            field: fields[limit],
+            sheetValue: `${fields[limit]} ${max} · ${fields[field]} ${v}`,
+            expected: `${fields[limit]} considerados = ${v}`,
             url,
-            reason: `${fields[field]} = ${v}, mas ${fields[limit]} = ${max}. ${msg}`,
+            reason: `${fields[field]} (${v}) maior que ${fields[limit]} (${max}). ${msg} O dash considerou ${fields[limit]} = ${v}.`,
           });
-          values[field] = null;
         }
       };
 

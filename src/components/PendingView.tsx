@@ -1,10 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ISSUE_KINDS, type IssueKind, type SyncIssue } from '@/lib/types';
-
-// Tipos que dependem de correção na planilha/cadastro (os demais são avisos).
-const ACTION_KINDS: IssueKind[] = ['regra', 'valor_invalido', 'divergencia', 'ausencia_planilha', 'renomear_aba', 'cadastro', 'data', 'papel_duplicado'];
+import { ACTION_KINDS, ISSUE_KINDS, type IssueKind, type SyncIssue } from '@/lib/types';
 const NO_LEADER = 'Sem líder identificado';
 
 function message(leader: string, people: [string, SyncIssue[]][]) {

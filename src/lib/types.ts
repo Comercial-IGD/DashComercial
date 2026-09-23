@@ -72,6 +72,7 @@ export const ISSUE_KINDS = {
   em_branco: 'Campos em branco',
   ajuste: 'Ajustado automaticamente',
   divergencia: 'Divergência entre planilhas',
+  legado: 'Legado (corrigir depois)',
   papel_duplicado: 'SDR e closer no mesmo dia',
   renomear_aba: 'Renomear aba',
   cadastro: 'Cadastro',
@@ -80,6 +81,9 @@ export const ISSUE_KINDS = {
 } as const;
 
 export type IssueKind = keyof typeof ISSUE_KINDS;
+
+// Tipos que dependem de correção na planilha (os demais são avisos ou legado a tratar depois).
+export const ACTION_KINDS: IssueKind[] = ['regra', 'valor_invalido', 'divergencia', 'ausencia_planilha', 'data', 'papel_duplicado'];
 
 export interface SyncIssue {
   kind: IssueKind;

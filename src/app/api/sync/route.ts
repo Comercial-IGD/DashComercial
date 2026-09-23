@@ -38,16 +38,11 @@ function reconcile<R extends AnyRow>(rows: R[], keys: readonly string[], labels:
 
     const person = roster.get(r.sellerId);
     const diff = keys.filter((k) => get(previous, k) !== get(r, k));
-    const winner = isCurrentLeaderSheet(r, person) ? r : isCurrentLeaderSheet(previous, person) ? previous : null;
-    let chosen: R;
-    if (winner) chosen = winner;
-    else {
-      chosen = { ...previous };
-      diff.forEach((k) => ((chosen as unknown as Record<string, number | null>)[k] = null));
-    }
-    map.set(id, chosen);
+    // Sem cópia do líder atual, vale a mais recente (planilhas lidas na ordem de SOURCES).
+    const winner = isCurrentLeaderSheet(r, person) ? r : isCurrentLeaderSheet(previous, person) ? previous : r;
+    map.set(id, winner);
     issues.push({
-      kind: 'divergencia',
+      kind: 'legado',
       source: `${previous.source} × ${r.source}`,
       seller: r.seller,
       sellerCode: r.sellerId,
@@ -56,18 +51,16 @@ function reconcile<R extends AnyRow>(rows: R[], keys: readonly string[], labels:
       sheetDate: r.date,
       field: diff.map((k) => labels[k]).join(', '),
       sheetValue: diff.map((k) => `${labels[k]}: ${get(previous, k) ?? '—'} (${previous.origin?.owner}) × ${get(r, k) ?? '—'} (${r.origin?.owner})`).join('; '),
-      expected: winner ? `Valor da planilha de ${winner.origin?.owner} (líder atual)` : 'Mesmo valor nas duas planilhas',
+      expected: `Valor da planilha de ${winner.origin?.owner}`,
       url: (winner === previous ? r : previous).origin?.url,
-      reason: winner
-        ? `Lançamento diferente entre planilhas. Considerado o valor da planilha do líder atual (${winner.origin?.owner}); corrigir a outra cópia.`
-        : 'Lançamento diferente entre planilhas e nenhuma é do líder atual. Campos conflitantes não informados até a correção.',
+      reason: `Cópia antiga diverge da planilha atual. Considerado o valor da planilha de ${winner.origin?.owner}; corrigir depois.`,
     });
   }
   return { rows: [...map.values()], copies, issues };
 }
 
 // Aba antiga zerada não deve fazer a pessoa aparecer como SDR e closer no mesmo dia.
-function resolveRoleOverlap(closers: DailyRow[], sdrs: SdrRow[]) {
+function resolveRoleOverlap(closers: DailyRow[], sdrs: SdrRow[], roster: Map<string, RosterPerson>) {
   const produced = (r: AnyRow, keys: readonly string[]) => keys.some((k) => (get(r, k) ?? 0) > 0);
   const sdrByDay = new Map(sdrs.map((r) => [`${r.sellerId}|${r.date}`, r]));
   const dropCloser = new Set<DailyRow>();
@@ -81,9 +74,13 @@ function resolveRoleOverlap(closers: DailyRow[], sdrs: SdrRow[]) {
     if (cp && !sp) dropSdr.add(s);
     else if (sp && !cp) dropCloser.add(c);
     else if (!cp && !sp) dropSdr.add(s);
-    else
+    else {
+      // Produção nos dois papéis: vale o cargo atual na planilha de times.
+      const isSdr = roster.get(c.sellerId)?.role === 'SDR';
+      if (isSdr) dropCloser.add(c);
+      else dropSdr.add(s);
       issues.push({
-        kind: 'papel_duplicado',
+        kind: 'legado',
         source: `${s.source} × ${c.source}`,
         seller: c.seller,
         sellerCode: c.sellerId,
@@ -91,8 +88,9 @@ function resolveRoleOverlap(closers: DailyRow[], sdrs: SdrRow[]) {
         date: br(c.date),
         sheetDate: c.date,
         url: s.origin?.url,
-        reason: 'Há produção lançada como SDR e como closer no mesmo dia. Os dois foram considerados; validar se está correto.',
+        reason: `Produção lançada como SDR e como closer no mesmo dia. Considerado como ${isSdr ? 'SDR' : 'closer'} (cargo na planilha de times); corrigir depois.`,
       });
+    }
   }
   return { closers: closers.filter((r) => !dropCloser.has(r)), sdrs: sdrs.filter((r) => !dropSdr.has(r)), issues };
 }
@@ -113,7 +111,7 @@ export async function GET(request: NextRequest) {
 
     const closerRec = reconcile(results.flatMap((r) => r.closerRows), METRIC_KEYS, METRIC_LABELS, byCode);
     const sdrRec = reconcile(results.flatMap((r) => r.sdrRows), SDR_KEYS, SDR_LABELS, byCode);
-    const overlap = resolveRoleOverlap(closerRec.rows, sdrRec.rows);
+    const overlap = resolveRoleOverlap(closerRec.rows, sdrRec.rows, byCode);
     // Erros de linha numa cópia que perdeu a conciliação (ex.: planilha do líder anterior) não afetam os totais.
     const keptUrls = new Set([...overlap.closers, ...overlap.sdrs].map((r) => r.origin?.url));
     const keptDays = new Set([...overlap.closers, ...overlap.sdrs].map((r) => `${r.sellerId}|${r.date}`));

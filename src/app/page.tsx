@@ -7,7 +7,7 @@ import { buildDemoData } from '@/lib/demoData';
 import { applyFilters, cascade, EMPTY_FILTERS, facetOptions, selectedRange, type FacetKey, type Filters } from '@/lib/filters';
 import { previousRange } from '@/lib/metrics';
 import { supabaseBrowser } from '@/lib/supabase/client';
-import { METRIC_KEYS, METRIC_LABELS, SDR_KEYS, SDR_LABELS, type DashboardData, type MetricKey, type SdrKey } from '@/lib/types';
+import { ACTION_KINDS, METRIC_KEYS, METRIC_LABELS, SDR_KEYS, SDR_LABELS, type DashboardData, type MetricKey, type SdrKey } from '@/lib/types';
 import { useAuth } from '@/lib/useAuth';
 import { useDashboardData } from '@/lib/useDashboardData';
 import { Funnel } from '@/components/Funnel';
@@ -75,7 +75,8 @@ export default function DashboardPage() {
         (!i.sheetDate || ((!from || i.sheetDate >= from) && (!to || i.sheetDate <= to))),
     );
   }, [data.issues, filters, range?.from, range?.to]);
-  const pendingCodes = useMemo(() => new Set(issues.map((i) => i.sellerCode).filter(Boolean) as string[]), [issues]);
+  const actionIssues = useMemo(() => issues.filter((i) => ACTION_KINDS.includes(i.kind)), [issues]);
+  const pendingCodes = useMemo(() => new Set(actionIssues.map((i) => i.sellerCode).filter(Boolean) as string[]), [actionIssues]);
 
   if (!ready) return <div className="dash"><p className="empty">Carregando…</p></div>;
   if (!demo && !session) return <div className="dash"><Login onDemo={() => setDemo(buildDemoData())} /></div>;
@@ -136,7 +137,7 @@ export default function DashboardPage() {
           {tabs.map(([id, label]) => (
             <button key={id} className={tab === id ? 'active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
               {label}
-              {id === 'pending' && issues.length > 0 && <span className="badge tab-badge">{issues.length}</span>}
+              {id === 'pending' && actionIssues.length > 0 && <span className="badge tab-badge">{actionIssues.length}</span>}
             </button>
           ))}
         </nav>
