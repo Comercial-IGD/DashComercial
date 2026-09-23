@@ -163,7 +163,8 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
   const errors: string[] = [];
   const issues: SyncIssue[] = [];
   const link = (sheetId: number, row?: number) =>
-    `https://docs.google.com/spreadsheets/d/${source.id}/edit#gid=${sheetId}${row ? `&range=B${row}` : ''}`;
+    // gid também na query: o fragmento (#) se perde em redirecionamentos de login do Google.
+    `https://docs.google.com/spreadsheets/d/${source.id}/edit?gid=${sheetId}${row ? `&range=B${row}` : ''}#gid=${sheetId}${row ? `&range=B${row}` : ''}`;
   const who = (p: RosterPerson) => ({ seller: p.seller, sellerCode: p.code, leader: p.leader, source: sourceName });
 
   const selected: SelectedSheet[] = [];

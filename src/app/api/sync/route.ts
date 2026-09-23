@@ -116,7 +116,14 @@ export async function GET(request: NextRequest) {
     const closerRec = reconcile(results.flatMap((r) => r.closerRows), METRIC_KEYS, METRIC_LABELS, byCode);
     const sdrRec = reconcile(results.flatMap((r) => r.sdrRows), SDR_KEYS, SDR_LABELS, byCode);
     const overlap = resolveRoleOverlap(closerRec.rows, sdrRec.rows);
-    const allIssues = [...results.flatMap((r) => r.issues), ...closerRec.issues, ...sdrRec.issues, ...overlap.issues];
+    // Erros de linha numa cópia que perdeu a conciliação (ex.: planilha do líder anterior) não afetam os totais.
+    const keptUrls = new Set([...overlap.closers, ...overlap.sdrs].map((r) => r.origin?.url));
+    const keptDays = new Set([...overlap.closers, ...overlap.sdrs].map((r) => `${r.sellerId}|${r.date}`));
+    const rowKinds = new Set(['regra', 'valor_invalido']);
+    const sourceIssues = results
+      .flatMap((r) => r.issues)
+      .filter((i) => !(rowKinds.has(i.kind) && i.sheetDate && keptDays.has(`${i.sellerCode}|${i.sheetDate}`) && !keptUrls.has(i.url)));
+    const allIssues = [...sourceIssues, ...closerRec.issues, ...sdrRec.issues, ...overlap.issues];
     const now = new Date().toISOString();
     const db = supabaseServer();
 
