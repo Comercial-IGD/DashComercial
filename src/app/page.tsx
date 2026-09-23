@@ -7,7 +7,7 @@ import { buildDemoData } from '@/lib/demoData';
 import { applyFilters, cascade, EMPTY_FILTERS, facetOptions, selectedRange, type FacetKey, type Filters } from '@/lib/filters';
 import { previousRange } from '@/lib/metrics';
 import { supabaseBrowser } from '@/lib/supabase/client';
-import { ACTION_KINDS, METRIC_KEYS, METRIC_LABELS, SDR_KEYS, SDR_LABELS, type DashboardData, type SyncIssue, type MetricKey, type SdrKey } from '@/lib/types';
+import { ACTION_KINDS, METRIC_KEYS, METRIC_LABELS, PRODUCT_LABELS, SDR_KEYS, SDR_LABELS, SOCIAL_KEYS, SOCIAL_LABELS, type DashboardData, type SyncIssue, type MetricKey, type SdrKey, type SocialKey } from '@/lib/types';
 import { useAuth } from '@/lib/useAuth';
 import { useDashboardData } from '@/lib/useDashboardData';
 import { Funnel } from '@/components/Funnel';
@@ -17,7 +17,7 @@ import { PeopleView } from '@/components/PeopleView';
 import { PendingView } from '@/components/PendingView';
 import { StatusAdmin } from '@/components/StatusAdmin';
 
-type Tab = 'overview' | 'sdr' | 'closers' | 'people' | 'pending' | 'status';
+type Tab = 'overview' | 'sdr' | 'closers' | 'social' | 'people' | 'pending' | 'status';
 
 const WEEKDAYS = [
   ['1', 'Segunda'],
@@ -33,6 +33,12 @@ const SDR_RATES: RateDef<SdrKey>[] = [
   { id: 'contato', label: 'Taxa de contato', num: 'atenderam', den: 'ligacoes', minBase: 50, hint: 'Atenderam ÷ ligações realizadas' },
   { id: 'agendamento', label: 'Taxa de agendamento', num: 'agendasCriadas', den: 'atenderam', minBase: 20, hint: 'Agendas criadas ÷ atenderam' },
   { id: 'show', label: 'Comparecimento', num: 'compareceram', den: 'agendadosHoje', minBase: 10, hint: 'Compareceram ÷ agendados para o dia' },
+];
+
+const SOCIAL_RATES: RateDef<SocialKey>[] = [
+  { id: 'resposta', label: 'Taxa de resposta', num: 'responderam', den: 'abordados', minBase: 50, hint: 'Responderam ÷ leads abordados' },
+  { id: 'agendamento', label: 'Taxa de agendamento', num: 'agendamentosCriados', den: 'responderam', minBase: 20, hint: 'Agendamentos criados ÷ responderam' },
+  { id: 'show', label: 'Comparecimento', num: 'calls', den: 'agendadosHoje', minBase: 10, hint: 'Calls realizadas ÷ agendados para o dia' },
 ];
 
 const CLOSER_RATES: RateDef<MetricKey>[] = [
@@ -52,15 +58,17 @@ export default function DashboardPage() {
   const data = demo ?? live.data;
   const canEditStatus = !!demo || role === 'rh' || role === 'admin';
 
-  const allRows = useMemo(() => [...data.rows, ...data.sdrRows], [data]);
+  const allRows = useMemo(() => [...data.rows, ...data.sdrRows, ...data.socialRows], [data]);
   const setFilter = (k: keyof Filters, v: string) => setFilters((f) => cascade(allRows, { ...f, [k]: v }, data.calendar, k));
-  const facet = (k: FacetKey) => facetOptions(allRows, filters, data.calendar, k);
+  const facet = (k: FacetKey) =>
+    facetOptions(allRows, filters, data.calendar, k).map((o) => (k === 'product' ? { ...o, label: PRODUCT_LABELS[o.value] ?? o.value } : o));
   const monthRange = data.calendar.find((m) => m.id === filters.month);
 
   const absences = useMemo(() => absenceIndex(data.statuses), [data.statuses]);
   const range = selectedRange(filters, data.calendar);
   const closers = useMemo(() => applyFilters(data.rows, filters, data.calendar), [data.rows, filters, data.calendar]);
   const sdrs = useMemo(() => applyFilters(data.sdrRows, filters, data.calendar), [data.sdrRows, filters, data.calendar]);
+  const socials = useMemo(() => applyFilters(data.socialRows, filters, data.calendar), [data.socialRows, filters, data.calendar]);
   const prev = useMemo(() => {
     if (!range || filters.week) return null;
     const r = previousRange(range.from, range.to);
@@ -133,6 +141,7 @@ export default function DashboardPage() {
     ['overview', 'Visão geral'],
     ['sdr', 'SDR'],
     ['closers', 'Closers'],
+    ['social', 'Social Selling'],
     ['people', 'Pessoas'],
     ['pending', 'Pendências'],
     ...(canEditStatus ? ([['status', 'Status (RH)']] as [Tab, string][]) : []),
@@ -215,6 +224,7 @@ export default function DashboardPage() {
             <section className="middle">
               <MiniRole title="SDR" rows={sdrs.length} people={new Set(sdrs.map((r) => r.sellerId)).size} onOpen={() => setTab('sdr')} />
               <MiniRole title="Closers" rows={closers.length} people={new Set(closers.map((r) => r.sellerId)).size} onOpen={() => setTab('closers')} />
+              <MiniRole title="Social Selling" rows={socials.length} people={new Set(socials.map((r) => r.sellerId)).size} onOpen={() => setTab('social')} />
             </section>
           </>
         )}
@@ -249,6 +259,27 @@ export default function DashboardPage() {
             rates={CLOSER_RATES}
             rankMetrics={['calls', 'headcounts']}
             perDay="calls"
+            calendar={data.calendar}
+            absences={absences}
+            range={rangeView}
+            singlePerson={singlePerson}
+            pendingCodes={pendingCodes}
+            onPending={(code) => {
+              setFilters({ ...EMPTY_FILTERS, person: code });
+              setTab('pending');
+            }}
+          />
+        )}
+
+        {tab === 'social' && (
+          <MetricsView
+            eyebrow="SOCIAL SELLING"
+            rows={socials}
+            keys={SOCIAL_KEYS}
+            labels={SOCIAL_LABELS}
+            rates={SOCIAL_RATES}
+            rankMetrics={['abordados', 'agendamentosCriados']}
+            perDay="abordados"
             calendar={data.calendar}
             absences={absences}
             range={rangeView}

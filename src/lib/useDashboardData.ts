@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabaseBrowser } from './supabase/client';
 import { DEFAULT_CALENDAR } from './calendar';
-import { ISSUE_KINDS, type AttendanceStatus, type DailyRow, type DashboardData, type RosterEntry, type SdrRow, type SyncIssue } from './types';
+import { ISSUE_KINDS, type AttendanceStatus, type DailyRow, type DashboardData, type RosterEntry, type SdrRow, type SocialRow, type SyncIssue } from './types';
 
 const PAGE = 1000;
 
@@ -35,7 +35,7 @@ const baseRow = (r: DbRow) => ({
 
 const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 
-const EMPTY: DashboardData = { rows: [], sdrRows: [], roster: [], statuses: [], calendar: DEFAULT_CALENDAR, issues: [] };
+const EMPTY: DashboardData = { rows: [], sdrRows: [], socialRows: [], roster: [], statuses: [], calendar: DEFAULT_CALENDAR, issues: [] };
 
 export function useDashboardData(enabled: boolean) {
   const [data, setData] = useState<DashboardData>(EMPTY);
@@ -49,9 +49,11 @@ export function useDashboardData(enabled: boolean) {
     setError(null);
     try {
       const sb = supabaseBrowser();
-      const [metrics, sdr, statuses, issues, calendarRes, rosterRes] = await Promise.all([
+      const [metrics, sdr, social, statuses, issues, calendarRes, rosterRes] = await Promise.all([
         fetchAll('daily_metrics', 'date'),
         fetchAll('sdr_daily_metrics', 'date'),
+        // Tabela criada na migration 004; sem ela o dash segue sem Social Selling.
+        fetchAll('social_daily_metrics', 'date').catch(() => [] as DbRow[]),
         fetchAll('attendance_status', 'start_date'),
         fetchAll('sync_issues', 'id'),
         sb.from('commercial_calendar').select('*').order('start_date'),
@@ -82,6 +84,17 @@ export function useDashboardData(enabled: boolean) {
         headcounts: num(r.headcounts),
       }));
 
+      const socialRows: SocialRow[] = social.map((r) => ({
+        type: 'social',
+        ...baseRow(r),
+        abordados: num(r.abordados),
+        responderam: num(r.responderam),
+        agendamentosCriados: num(r.agendamentos_criados),
+        agendadosHoje: num(r.agendados_hoje),
+        calls: num(r.calls),
+        headcounts: num(r.headcounts),
+      }));
+
       const roster: RosterEntry[] = (rosterRes.data || []).map((p) => ({
         code: p.code,
         seller: p.seller_name,
@@ -94,6 +107,7 @@ export function useDashboardData(enabled: boolean) {
       setData({
         rows,
         sdrRows,
+        socialRows,
         roster,
         statuses: statuses.map(
           (s): AttendanceStatus => ({

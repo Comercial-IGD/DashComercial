@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchRoster, fetchSource, SOURCES, type RosterPerson } from '@/lib/googleSheets';
 import { supabaseServer } from '@/lib/supabase/server';
-import { METRIC_KEYS, METRIC_LABELS, SDR_KEYS, SDR_LABELS, type DailyRow, type SdrRow, type SyncIssue } from '@/lib/types';
+import { METRIC_KEYS, METRIC_LABELS, SDR_KEYS, SDR_LABELS, SOCIAL_KEYS, SOCIAL_LABELS, type DailyRow, type SdrRow, type SocialRow, type SyncIssue } from '@/lib/types';
 
 export const maxDuration = 60;
 
-type AnyRow = DailyRow | SdrRow;
+type AnyRow = DailyRow | SdrRow | SocialRow;
 const get = (r: AnyRow, k: string) => (r as unknown as Record<string, number | null>)[k];
 const br = (d: string) => d.split('-').reverse().join('/');
 
@@ -23,7 +23,7 @@ function reconcile<R extends AnyRow>(rows: R[], keys: readonly string[], labels:
   const empty = (r: R) => keys.every((k) => !get(r, k));
 
   for (const r of rows) {
-    const id = `${r.sellerId}|${r.date}`;
+    const id = `${r.sellerId}|${r.date}|${r.product}`;
     const previous = map.get(id);
     if (!previous) {
       map.set(id, r);
@@ -62,12 +62,12 @@ function reconcile<R extends AnyRow>(rows: R[], keys: readonly string[], labels:
 // Aba antiga zerada não deve fazer a pessoa aparecer como SDR e closer no mesmo dia.
 function resolveRoleOverlap(closers: DailyRow[], sdrs: SdrRow[], roster: Map<string, RosterPerson>) {
   const produced = (r: AnyRow, keys: readonly string[]) => keys.some((k) => (get(r, k) ?? 0) > 0);
-  const sdrByDay = new Map(sdrs.map((r) => [`${r.sellerId}|${r.date}`, r]));
+  const sdrByDay = new Map(sdrs.map((r) => [`${r.sellerId}|${r.date}|${r.product}`, r]));
   const dropCloser = new Set<DailyRow>();
   const dropSdr = new Set<SdrRow>();
   const issues: SyncIssue[] = [];
   for (const c of closers) {
-    const s = sdrByDay.get(`${c.sellerId}|${c.date}`);
+    const s = sdrByDay.get(`${c.sellerId}|${c.date}|${c.product}`);
     if (!s) continue;
     const cp = produced(c, METRIC_KEYS);
     const sp = produced(s, SDR_KEYS);
@@ -101,7 +101,8 @@ export async function GET(request: NextRequest) {
   if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   }
-  return runSync();
+  // ?dry=1 lê e concilia as planilhas sem gravar nada (diagnóstico).
+  return runSync(request.nextUrl.searchParams.get('dry') === '1');
 }
 
 // Botão "Atualizar agora" (POST) usa a sessão de um usuário liberado no dash.
@@ -111,10 +112,15 @@ export async function POST(request: NextRequest) {
   const { data } = token ? await db.auth.getUser(token) : { data: { user: null } };
   const { data: allowed } = data.user ? await db.from('app_users').select('role').eq('user_id', data.user.id).maybeSingle() : { data: null };
   if (!allowed) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+  // A cota do Google Sheets é de 60 leituras/min e cada sync faz ~40: cliques seguidos reaproveitam a última leitura.
+  const { data: last } = await db.from('sync_issues').select('synced_at').order('synced_at', { ascending: false }).limit(1).maybeSingle();
+  if (last?.synced_at && Date.now() - Date.parse(last.synced_at) < 120000) {
+    return NextResponse.json({ ok: true, skipped: true, syncedAt: last.synced_at });
+  }
   return runSync();
 }
 
-async function runSync() {
+async function runSync(dry = false) {
   try {
     const roster = await fetchRoster();
     const byCode = new Map(roster.filter((p) => p.code).map((p) => [p.code, p]));
@@ -125,16 +131,50 @@ async function runSync() {
 
     const closerRec = reconcile(results.flatMap((r) => r.closerRows), METRIC_KEYS, METRIC_LABELS, byCode);
     const sdrRec = reconcile(results.flatMap((r) => r.sdrRows), SDR_KEYS, SDR_LABELS, byCode);
+    const socialRec = reconcile(results.flatMap((r) => r.socialRows), SOCIAL_KEYS, SOCIAL_LABELS, byCode);
     const overlap = resolveRoleOverlap(closerRec.rows, sdrRec.rows, byCode);
     // Erros de linha numa cópia que perdeu a conciliação (ex.: planilha do líder anterior) não afetam os totais.
-    const keptUrls = new Set([...overlap.closers, ...overlap.sdrs].map((r) => r.origin?.url));
-    const keptDays = new Set([...overlap.closers, ...overlap.sdrs].map((r) => `${r.sellerId}|${r.date}`));
+    const keptUrls = new Set([...overlap.closers, ...overlap.sdrs, ...socialRec.rows].map((r) => r.origin?.url));
+    const keptDays = new Set([...overlap.closers, ...overlap.sdrs, ...socialRec.rows].map((r) => `${r.sellerId}|${r.date}`));
     const rowKinds = new Set(['regra', 'valor_invalido', 'ajuste']);
     const sourceIssues = results
       .flatMap((r) => r.issues)
       .filter((i) => !(rowKinds.has(i.kind) && i.sheetDate && keptDays.has(`${i.sellerCode}|${i.sheetDate}`) && !keptUrls.has(i.url)));
-    const allIssues = [...sourceIssues, ...closerRec.issues, ...sdrRec.issues, ...overlap.issues];
+    const allIssues = [...sourceIssues, ...closerRec.issues, ...sdrRec.issues, ...socialRec.issues, ...overlap.issues];
+    const summary = () => {
+      const byKind: Record<string, number> = {};
+      allIssues.forEach((i) => (byKind[i.kind] = (byKind[i.kind] || 0) + 1));
+      return {
+        closerRows: overlap.closers.length,
+        sdrRows: overlap.sdrs.length,
+        socialRows: socialRec.rows.length,
+        // closers/SDR/social por produto
+        byProduct: Object.fromEntries(
+          ['FL', 'INSIDER'].map((p) => [p, [overlap.closers, overlap.sdrs, socialRec.rows].map((rows) => rows.filter((r) => r.product === p).length).join('/')]),
+        ),
+        copiesReconciled: closerRec.copies + sdrRec.copies + socialRec.copies,
+        issues: allIssues.length,
+        byKind,
+      };
+    };
     const now = new Date().toISOString();
+    if (dry) {
+      const bySource = results.map((r) => ({
+        source: r.source,
+        closer: r.closerRows.length,
+        sdr: r.sdrRows.length,
+        social: r.socialRows.length,
+        products: [...new Set([...r.closerRows, ...r.sdrRows, ...r.socialRows].map((x) => x.product))].join(','),
+      }));
+      const count = (keys: string[]) => keys.reduce<Record<string, number>>((m, k) => ((m[k] = (m[k] || 0) + 1), m), {});
+      const samples = {
+        invalid: count(allIssues.filter((i) => i.kind === 'valor_invalido').map((i) => `${i.sheetValue} · ${i.seller} · ${i.source}`)),
+        flSdrNonFl: count(overlap.sdrs.filter((r) => r.product === 'FL' && byCode.get(r.sellerId)?.product !== 'FL').map((r) => `${r.seller} (${byCode.get(r.sellerId)?.product}) · ${r.source}`)),
+        flCloserNonFl: count(overlap.closers.filter((r) => r.product === 'FL' && byCode.get(r.sellerId)?.product !== 'FL').map((r) => `${r.seller} (${byCode.get(r.sellerId)?.product}) · ${r.source}`)),
+        insiderNonInsider: count([...overlap.closers, ...overlap.sdrs].filter((r) => r.product === 'INSIDER' && byCode.get(r.sellerId)?.product !== 'INSIDER').map((r) => `${r.seller} (${byCode.get(r.sellerId)?.product}) · ${r.source}`)),
+      };
+      return NextResponse.json({ ok: true, dry: true, ...summary(), bySource, samples });
+    }
     const db = supabaseServer();
 
     const { error: rosterError } = await db.from('roster').upsert(
@@ -189,7 +229,7 @@ async function runSync() {
         com_venda: r.comVenda,
         headcounts: r.headcounts,
       })),
-      'seller_code,date',
+      'seller_code,date,product',
     );
     await insertChunks(
       'sdr_daily_metrics',
@@ -202,11 +242,24 @@ async function runSync() {
         compareceram: r.compareceram,
         headcounts: r.headcounts,
       })),
-      'seller_code,date',
+      'seller_code,date,product',
+    );
+    await insertChunks(
+      'social_daily_metrics',
+      socialRec.rows.map((r) => ({
+        ...base(r),
+        abordados: r.abordados,
+        responderam: r.responderam,
+        agendamentos_criados: r.agendamentosCriados,
+        agendados_hoje: r.agendadosHoje,
+        calls: r.calls,
+        headcounts: r.headcounts,
+      })),
+      'seller_code,date,product',
     );
 
     // Dias que deixaram de valer na planilha (ex.: viraram ausência ou aba zerada) saem do banco.
-    for (const table of ['daily_metrics', 'sdr_daily_metrics']) {
+    for (const table of ['daily_metrics', 'sdr_daily_metrics', 'social_daily_metrics']) {
       const { error } = await db.from(table).delete().lt('synced_at', now);
       if (error) throw error;
     }
@@ -232,17 +285,7 @@ async function runSync() {
       })),
     );
 
-    const byKind: Record<string, number> = {};
-    allIssues.forEach((i) => (byKind[i.kind] = (byKind[i.kind] || 0) + 1));
-    return NextResponse.json({
-      ok: true,
-      closerRows: overlap.closers.length,
-      sdrRows: overlap.sdrs.length,
-      copiesReconciled: closerRec.copies + sdrRec.copies,
-      issues: allIssues.length,
-      byKind,
-      syncedAt: now,
-    });
+    return NextResponse.json({ ok: true, ...summary(), syncedAt: now });
   } catch (e) {
     const message = e instanceof Error ? e.message : typeof e === 'object' && e && 'message' in e ? String(e.message) : String(e);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
