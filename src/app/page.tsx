@@ -7,7 +7,7 @@ import { buildDemoData } from '@/lib/demoData';
 import { applyFilters, cascade, EMPTY_FILTERS, facetOptions, selectedRange, type FacetKey, type Filters } from '@/lib/filters';
 import { previousRange } from '@/lib/metrics';
 import { supabaseBrowser } from '@/lib/supabase/client';
-import { ACTION_KINDS, METRIC_KEYS, METRIC_LABELS, SDR_KEYS, SDR_LABELS, type DashboardData, type MetricKey, type SdrKey } from '@/lib/types';
+import { ACTION_KINDS, METRIC_KEYS, METRIC_LABELS, SDR_KEYS, SDR_LABELS, type DashboardData, type SyncIssue, type MetricKey, type SdrKey } from '@/lib/types';
 import { useAuth } from '@/lib/useAuth';
 import { useDashboardData } from '@/lib/useDashboardData';
 import { Funnel } from '@/components/Funnel';
@@ -68,13 +68,19 @@ export default function DashboardPage() {
   const issues = useMemo(() => {
     const from = range?.from ?? filters.from;
     const to = range?.to ?? filters.to;
+    // Ausência escrita na planilha some quando o RH registra um status cobrindo o dia.
+    const registered = (i: SyncIssue) =>
+      i.kind === 'ausencia_planilha' &&
+      !!i.sheetDate &&
+      data.statuses.some((s) => s.sellerCode === i.sellerCode && s.start <= i.sheetDate! && s.end >= i.sheetDate!);
     return data.issues.filter(
       (i) =>
+        !registered(i) &&
         (!filters.leader || i.leader === filters.leader) &&
         (!filters.person || i.sellerCode === filters.person) &&
         (!i.sheetDate || ((!from || i.sheetDate >= from) && (!to || i.sheetDate <= to))),
     );
-  }, [data.issues, filters, range?.from, range?.to]);
+  }, [data.issues, data.statuses, filters, range?.from, range?.to]);
   const actionIssues = useMemo(() => issues.filter((i) => ACTION_KINDS.includes(i.kind)), [issues]);
   const pendingCodes = useMemo(() => new Set(actionIssues.map((i) => i.sellerCode).filter(Boolean) as string[]), [actionIssues]);
 

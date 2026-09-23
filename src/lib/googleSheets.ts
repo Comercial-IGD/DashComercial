@@ -316,6 +316,7 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
           date: br(date),
           sheetDate: date,
           sheetValue: String(absence),
+          expected: 'Registrar na aba Status RH',
           url,
           reason: `A planilha indica "${String(absence).trim()}" em ${br(date)}. Dia fora dos totais; registrar a ausência na aba Status (RH).`,
         });
