@@ -9,7 +9,7 @@ export interface SourceConfig {
   leaderCode?: string;
 }
 
-// Planilhas de líder (closers + SDRs do líder) e planilhas exclusivas de SDR.
+// Planilhas de líder (closers + SDRs do líder) e planilhas exclusivas de SDR; leaderCode = dono da planilha.
 export const SOURCES: SourceConfig[] = [
   { id: '15ZvGFI4XCrzr09Mg37XUboO9r8GpBAYSV6X6MFF5MaM', kind: 'leader', leaderCode: 'V96' },
   { id: '1fsOm6MMS-HyYnfVxZj7yAdGBxpBCWTKavKU0cOQjW7Q', kind: 'leader', leaderCode: 'V555' },
@@ -17,8 +17,8 @@ export const SOURCES: SourceConfig[] = [
   { id: '1sl6Jyd3PCUTpZnn8dN0Il6IpK1gXX2jZwCNe2fcHYlY', kind: 'leader', leaderCode: 'V1065' },
   { id: '1YLagcrWrEE7WEG56Ldgmsyfmvkdz2i8miWx3wMVyqPI', kind: 'leader', leaderCode: 'V1047' },
   { id: '18RqQooixW531m-u1Ti-2etzDkNkXInRcm3BJ6_0jK44', kind: 'leader', leaderCode: 'V990' },
-  { id: '1rwf53Z2raKCl9lz4qQlZjiERQ-JkkHOEFV8NYs3GcBA', kind: 'sdr' },
-  { id: '13S3NA-dWgSrHi6LW-cLN2Wgqp2GrCqMZDoj3u6CDnWg', kind: 'sdr' },
+  { id: '1rwf53Z2raKCl9lz4qQlZjiERQ-JkkHOEFV8NYs3GcBA', kind: 'sdr', leaderCode: 'V730' },
+  { id: '13S3NA-dWgSrHi6LW-cLN2Wgqp2GrCqMZDoj3u6CDnWg', kind: 'sdr', leaderCode: 'V960' },
 ];
 
 export const ACTIVE_PRODUCTS = ['FL'];
@@ -372,7 +372,7 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
         week: week || commercialWeek(date),
         status: 'Ativo',
         product: p.product,
-        origin: { owner, url },
+        origin: { owner, ownerCode: source.leaderCode ?? '', url },
       };
 
       if (current.kind === 'closer') {

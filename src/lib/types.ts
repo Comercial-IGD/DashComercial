@@ -47,7 +47,7 @@ interface BaseRow {
   status: string;
   product: string;
   // Só na coleta: dono da planilha de origem e link da linha (não vai para o banco).
-  origin?: { owner: string; url: string };
+  origin?: { owner: string; ownerCode: string; url: string };
 }
 
 export interface DailyRow extends BaseRow, Record<MetricKey, number | null> {

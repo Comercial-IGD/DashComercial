@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchRoster, fetchSource, nameTokens, SOURCES, type RosterPerson } from '@/lib/googleSheets';
+import { fetchRoster, fetchSource, SOURCES, type RosterPerson } from '@/lib/googleSheets';
 import { supabaseServer } from '@/lib/supabase/server';
 import { METRIC_KEYS, METRIC_LABELS, SDR_KEYS, SDR_LABELS, type DailyRow, type SdrRow, type SyncIssue } from '@/lib/types';
 
@@ -9,11 +9,9 @@ type AnyRow = DailyRow | SdrRow;
 const get = (r: AnyRow, k: string) => (r as unknown as Record<string, number | null>)[k];
 const br = (d: string) => d.split('-').reverse().join('/');
 
-// A planilha pertence ao líder atual quando o nome do dono (do título) está contido no nome do líder no cadastro.
+// A planilha pertence ao líder atual quando o código do dono da planilha é o código do líder da pessoa no cadastro.
 function isCurrentLeaderSheet(r: AnyRow, person: RosterPerson | undefined) {
-  const owner = nameTokens(r.origin?.owner ?? '');
-  const leader = nameTokens(person?.leader ?? '');
-  return owner.length > 0 && owner.every((t) => leader.includes(t));
+  return !!person?.leaderCode && r.origin?.ownerCode === person.leaderCode;
 }
 
 // Troca de time duplica a aba de propósito: cópias idênticas (ou zeradas) contam uma vez.
