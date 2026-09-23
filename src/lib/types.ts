@@ -70,6 +70,7 @@ export const ISSUE_KINDS = {
   valor_invalido: 'Valor inválido',
   ausencia_planilha: 'Registrar ausência no RH',
   em_branco: 'Campos em branco',
+  ajuste: 'Ajustado automaticamente',
   divergencia: 'Divergência entre planilhas',
   papel_duplicado: 'SDR e closer no mesmo dia',
   renomear_aba: 'Renomear aba',

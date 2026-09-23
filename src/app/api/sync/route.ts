@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
     // Erros de linha numa cópia que perdeu a conciliação (ex.: planilha do líder anterior) não afetam os totais.
     const keptUrls = new Set([...overlap.closers, ...overlap.sdrs].map((r) => r.origin?.url));
     const keptDays = new Set([...overlap.closers, ...overlap.sdrs].map((r) => `${r.sellerId}|${r.date}`));
-    const rowKinds = new Set(['regra', 'valor_invalido']);
+    const rowKinds = new Set(['regra', 'valor_invalido', 'ajuste']);
     const sourceIssues = results
       .flatMap((r) => r.issues)
       .filter((i) => !(rowKinds.has(i.kind) && i.sheetDate && keptDays.has(`${i.sellerCode}|${i.sheetDate}`) && !keptUrls.has(i.url)));

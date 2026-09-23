@@ -383,7 +383,22 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
         closerRows.push(r);
       } else {
         rule(1, 0, 'Atenderam não pode exceder as ligações realizadas.');
-        rule(4, 3, 'Compareceram não pode exceder os agendados para o dia.');
+        // Regra de negócio: se compareceram mais pessoas que as agendadas para o dia, agendados = compareceram.
+        const [agendados, compareceram] = [values[3], values[4]];
+        if (agendados !== null && compareceram !== null && compareceram > agendados) {
+          values[3] = compareceram;
+          issues.push({
+            kind: 'ajuste',
+            ...who(p),
+            date: br(date),
+            sheetDate: date,
+            field: fields[3],
+            sheetValue: `Agendados ${agendados} · Compareceram ${compareceram}`,
+            expected: `Agendados considerados = ${compareceram}`,
+            url,
+            reason: `Compareceram (${compareceram}) maior que Agendados para hoje (${agendados}); o dash considerou Agendados = ${compareceram}.`,
+          });
+        }
         const r = { type: 'sdr', ...base } as SdrRow;
         SDR_KEYS.forEach((k, j) => (r[k] = values[j]));
         sdrRows.push(r);
