@@ -34,12 +34,18 @@ function reconcile<R extends AnyRow>(rows: R[], keys: readonly string[], labels:
       map.set(id, r);
       continue;
     }
-    if (empty(r) || keys.every((k) => get(r, k) === get(previous, k))) continue;
+    if (empty(r) || keys.every((k) => get(r, k) === get(previous, k))) {
+      // Cópias iguais: fica registrada a da planilha da própria pessoa, se houver.
+      if (!empty(r) && r.origin?.ownerCode === r.sellerId) map.set(id, r);
+      continue;
+    }
 
     const person = roster.get(r.sellerId);
     const diff = keys.filter((k) => get(previous, k) !== get(r, k));
-    // Sem cópia do líder atual, vale a mais recente (planilhas lidas na ordem de SOURCES).
-    const winner = isCurrentLeaderSheet(r, person) ? r : isCurrentLeaderSheet(previous, person) ? previous : r;
+    // Prioridade: planilha da própria pessoa (líder/supervisor com time próprio), depois a do líder atual,
+    // depois a mais recente (planilhas lidas na ordem de SOURCES).
+    const own = (x: R) => x.origin?.ownerCode === x.sellerId;
+    const winner = own(r) ? r : own(previous) ? previous : isCurrentLeaderSheet(r, person) ? r : isCurrentLeaderSheet(previous, person) ? previous : r;
     map.set(id, winner);
     issues.push({
       kind: 'legado',

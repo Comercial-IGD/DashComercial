@@ -35,6 +35,8 @@ export const SOURCES: SourceConfig[] = [
   { id: '1pfWHJejaP_Jq0L8nO06V3qheAb9MiCXxioPdhs0iwwg', kind: 'social', product: 'INSIDER', leaderCode: 'V356' }, // CRM - Social Selling - Rebeca
 ];
 
+const SHEET_OWNERS = new Set(SOURCES.filter((s) => s.kind === 'leader' && s.leaderCode).map((s) => s.leaderCode));
+
 export const ACTIVE_PRODUCTS = ['FL', 'INSIDER'];
 const ACTIVE_ROLES = ['CLOSER', 'SDR'];
 
@@ -411,7 +413,8 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
         code: p.code,
         sellerId: p.code,
         source: sourceName,
-        leader: p.leader,
+        // Dono de planilha (líder/supervisor) aparece no próprio time, não no do seu superior.
+        leader: SHEET_OWNERS.has(p.code) ? p.seller : p.leader,
         team: p.team,
         week: week || commercialWeek(date),
         status: 'Ativo',
