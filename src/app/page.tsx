@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import './dashboard.css';
 import { absenceIndex } from '@/lib/attendance';
 import { buildDemoData } from '@/lib/demoData';
-import { applyFilters, EMPTY_FILTERS, selectedRange, type Filters } from '@/lib/filters';
+import { applyFilters, cascade, EMPTY_FILTERS, facetOptions, selectedRange, type FacetKey, type Filters } from '@/lib/filters';
 import { previousRange } from '@/lib/metrics';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { METRIC_KEYS, METRIC_LABELS, SDR_KEYS, SDR_LABELS, type DashboardData, type MetricKey, type SdrKey } from '@/lib/types';
@@ -49,14 +49,11 @@ export default function DashboardPage() {
 
   const data = demo ?? live.data;
   const canEditStatus = !!demo || role === 'rh' || role === 'admin';
-  const setFilter = (k: keyof Filters, v: string) => setFilters((f) => ({ ...f, [k]: v }));
 
   const allRows = useMemo(() => [...data.rows, ...data.sdrRows], [data]);
-  const options = (pick: (r: (typeof allRows)[number]) => string) => [...new Set(allRows.map(pick))].filter(Boolean).sort();
-  const people = useMemo(
-    () => [...new Map(allRows.map((r) => [r.sellerId, r.seller])).entries()].sort((a, b) => a[1].localeCompare(b[1])),
-    [allRows],
-  );
+  const setFilter = (k: keyof Filters, v: string) => setFilters((f) => cascade(allRows, { ...f, [k]: v }, data.calendar, k));
+  const facet = (k: FacetKey) => facetOptions(allRows, filters, data.calendar, k);
+  const monthRange = data.calendar.find((m) => m.id === filters.month);
 
   const absences = useMemo(() => absenceIndex(data.statuses), [data.statuses]);
   const range = selectedRange(filters, data.calendar);
@@ -150,67 +147,15 @@ export default function DashboardPage() {
 
         {tab !== 'status' && (
           <section className="filters" aria-label="Filtros">
-            <label>
-              Produto
-              <select value={filters.product} onChange={(e) => setFilter('product', e.target.value)}>
-                <option value="">Todos</option>
-                {options((r) => r.product).map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Time
-              <select value={filters.team} onChange={(e) => setFilter('team', e.target.value)}>
-                <option value="">Todos</option>
-                {options((r) => r.team).map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Líder
-              <select value={filters.leader} onChange={(e) => setFilter('leader', e.target.value)}>
-                <option value="">Todos</option>
-                {options((r) => r.leader).map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Pessoa
-              <select value={filters.person} onChange={(e) => setFilter('person', e.target.value)}>
-                <option value="">Todas</option>
-                {people.map(([id, name]) => (
-                  <option key={id} value={id}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Mês comercial
-              <select value={filters.month} onChange={(e) => setFilter('month', e.target.value)}>
-                <option value="">Todos os meses</option>
-                {data.calendar.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Semana
-              <select value={filters.week} onChange={(e) => setFilter('week', e.target.value)}>
-                <option value="">Todas</option>
-                {options((r) => r.week).map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
-            </label>
+            <FacetSelect label="Produto" all="Todos" value={filters.product} options={facet('product')} showPeople={true} onChange={(v) => setFilter('product', v)} />
+            <FacetSelect label="Time" all="Todos" value={filters.team} options={facet('team')} showPeople={true} onChange={(v) => setFilter('team', v)} />
+            <FacetSelect label="Líder" all="Todos" value={filters.leader} options={facet('leader')} showPeople={true} onChange={(v) => setFilter('leader', v)} />
+            <FacetSelect label="Pessoa" all="Todas" value={filters.person} options={facet('person')} showPeople={false} onChange={(v) => setFilter('person', v)} />
+            <FacetSelect label="Mês comercial" all="Todos os meses" value={filters.month} options={facet('month')} showPeople={true} onChange={(v) => setFilter('month', v)} />
+            <FacetSelect label="Semana" all="Todas" value={filters.week} options={facet('week')} showPeople={true} onChange={(v) => setFilter('week', v)} />
             <label>
               Dia da semana
-              <select value={filters.weekday} onChange={(e) => setFilter('weekday', e.target.value)}>
+              <select className={filters.weekday ? 'active' : ''} value={filters.weekday} onChange={(e) => setFilter('weekday', e.target.value)}>
                 <option value="">Todos os dias</option>
                 {WEEKDAYS.map(([v, l]) => (
                   <option key={v} value={v}>
@@ -222,11 +167,11 @@ export default function DashboardPage() {
             <div className="date-pair">
               <label>
                 De
-                <input type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} />
+                <input type="date" value={filters.from} min={monthRange?.start} max={filters.to || monthRange?.end} onChange={(e) => setFilter('from', e.target.value)} />
               </label>
               <label>
                 Até
-                <input type="date" value={filters.to} onChange={(e) => setFilter('to', e.target.value)} />
+                <input type="date" value={filters.to} min={filters.from || monthRange?.start} max={monthRange?.end} onChange={(e) => setFilter('to', e.target.value)} />
               </label>
             </div>
             <button className="clear" onClick={() => setFilters(EMPTY_FILTERS)}>
@@ -313,5 +258,33 @@ function MiniRole({ title, rows, people, onOpen }: { title: string; rows: number
       </h2>
       <button onClick={onOpen}>Abrir visão de {title}</button>
     </article>
+  );
+}
+
+function FacetSelect(props: {
+  label: string;
+  all: string;
+  value: string;
+  options: { value: string; label: string; people: number }[];
+  showPeople: boolean;
+  onChange: (v: string) => void;
+}) {
+  const single = props.options.length === 1 && !props.value;
+  return (
+    <label>
+      {props.label}
+      <select className={props.value ? 'active' : ''} value={props.value} onChange={(e) => props.onChange(e.target.value)}>
+        <option value="">
+          {props.all}
+          {single ? ` (só ${props.options[0].label})` : props.options.length > 1 ? ` (${props.options.length})` : ''}
+        </option>
+        {props.options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+            {props.showPeople ? ` · ${o.people} ${o.people === 1 ? 'pessoa' : 'pessoas'}` : ''}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

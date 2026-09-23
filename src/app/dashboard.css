@@ -172,3 +172,6 @@
 .dash .badge.kind-divergencia,.dash .badge.kind-papel_duplicado{background:#3d2a4d;color:#dcb8ff}
 .dash .badge.kind-renomear_aba,.dash .badge.kind-cadastro{background:#1d3a4d;color:#9fd8f5}
 .dash .badge.kind-ausencia_planilha{background:#18413a;color:#89e8d5}
+
+/* Filtro ativo */
+.dash .filters select.active,.dash .filters input:not(:placeholder-shown):valid[value]:not([value=""]){border-color:#55c8b5;background:#16303a}
