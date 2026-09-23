@@ -95,12 +95,26 @@ function resolveRoleOverlap(closers: DailyRow[], sdrs: SdrRow[], roster: Map<str
   return { closers: closers.filter((r) => !dropCloser.has(r)), sdrs: sdrs.filter((r) => !dropSdr.has(r)), issues };
 }
 
+// Cron (GET) usa o CRON_SECRET.
 export async function GET(request: NextRequest) {
   const secret = request.headers.get('authorization')?.replace('Bearer ', '') ?? request.nextUrl.searchParams.get('secret');
   if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   }
+  return runSync();
+}
 
+// Botão "Atualizar agora" (POST) usa a sessão de um usuário liberado no dash.
+export async function POST(request: NextRequest) {
+  const token = request.headers.get('authorization')?.replace('Bearer ', '');
+  const db = supabaseServer();
+  const { data } = token ? await db.auth.getUser(token) : { data: { user: null } };
+  const { data: allowed } = data.user ? await db.from('app_users').select('role').eq('user_id', data.user.id).maybeSingle() : { data: null };
+  if (!allowed) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+  return runSync();
+}
+
+async function runSync() {
   try {
     const roster = await fetchRoster();
     const byCode = new Map(roster.filter((p) => p.code).map((p) => [p.code, p]));

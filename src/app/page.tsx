@@ -46,6 +46,8 @@ export default function DashboardPage() {
   const live = useDashboardData(!!session && !!role && !demo);
   const [tab, setTab] = useState<Tab>('overview');
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState('');
 
   const data = demo ?? live.data;
   const canEditStatus = !!demo || role === 'rh' || role === 'admin';
@@ -99,13 +101,33 @@ export default function DashboardPage() {
       </div>
     );
 
+  // Lê as planilhas agora (não só o banco) e depois recarrega o dash.
+  const syncNow = async () => {
+    setSyncing(true);
+    setSyncError('');
+    try {
+      const res = await fetch('/api/sync', { method: 'POST', headers: { Authorization: `Bearer ${session?.access_token}` } });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      await live.reload();
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const notice = demo
     ? 'DEMONSTRAÇÃO • Dados fictícios. Nada é gravado no banco.'
+    : syncing
+      ? 'Buscando os dados nas planilhas… isso leva cerca de 1 minuto.'
+    : syncError
+      ? `Não foi possível ler as planilhas: ${syncError}`
     : live.error
       ? `Não foi possível atualizar: ${live.error}`
       : live.loading && !live.loadedAt
         ? 'Consultando a base de dados…'
-        : `Atualizado às ${live.loadedAt?.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) ?? '—'} · ${data.rows.length.toLocaleString('pt-BR')} registros de closers · ${data.sdrRows.length.toLocaleString('pt-BR')} de SDR · atualização automática a cada 5 minutos`;
+        : `Planilhas lidas em ${live.syncedAt?.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) ?? '—'} ·${data.rows.length.toLocaleString('pt-BR')} registros de closers · ${data.sdrRows.length.toLocaleString('pt-BR')} de SDR · clique em "Atualizar agora" para buscar os lançamentos mais recentes`;
 
   const tabs: [Tab, string][] = [
     ['overview', 'Visão geral'],
@@ -130,8 +152,8 @@ export default function DashboardPage() {
           <button onClick={() => setDemo(null)}>Sair da demonstração</button>
         ) : (
           <>
-            <button onClick={() => live.reload()} disabled={live.loading}>
-              {live.loading ? 'Atualizando…' : 'Atualizar agora'}
+            <button onClick={syncNow} disabled={live.loading || syncing}>
+              {syncing ? 'Buscando nas planilhas…' : live.loading ? 'Atualizando…' : 'Atualizar agora'}
             </button>
             <button onClick={() => supabaseBrowser().auth.signOut()}>Sair</button>
           </>

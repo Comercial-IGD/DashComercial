@@ -42,6 +42,7 @@ export function useDashboardData(enabled: boolean) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  const [syncedAt, setSyncedAt] = useState<Date | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -125,6 +126,8 @@ export function useDashboardData(enabled: boolean) {
         ),
       });
       setLoadedAt(new Date());
+      const last = issues.reduce((m, i) => ((i.synced_at as string) > m ? (i.synced_at as string) : m), '');
+      setSyncedAt(last ? new Date(last) : null);
     } catch (e) {
       setError(e instanceof Error ? e.message : typeof e === 'object' && e && 'message' in e ? String(e.message) : String(e));
     } finally {
@@ -142,5 +145,5 @@ export function useDashboardData(enabled: boolean) {
     return () => clearInterval(interval);
   }, [enabled, load]);
 
-  return { data, setData, loading, error, loadedAt, reload: load };
+  return { data, setData, loading, error, loadedAt, syncedAt, reload: load };
 }
