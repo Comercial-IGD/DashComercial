@@ -280,10 +280,12 @@ export default function DashboardPage() {
             keys={METRIC_KEYS}
             labels={METRIC_LABELS}
             rates={CLOSER_RATES}
-            rankMetrics={['calls', 'headcounts']}
+            rankMetrics={['headcounts', 'comVenda', 'calls']}
+            rankRates={[]}
             perDay="calls"
             roster={data.roster}
             zeroKey="headcounts"
+            leadColumns={['headcounts', 'comVenda', 'hc', 'show']}
             calendar={data.calendar}
             absences={absences}
             range={rangeView}

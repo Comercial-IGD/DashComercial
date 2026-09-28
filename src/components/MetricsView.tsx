@@ -36,6 +36,10 @@ interface Props<R extends Row, K extends string> {
   // Controle de performance (aba Closers): cadastro para contrato/21 dias e indicador que define ordem e zerados.
   roster?: RosterEntry[];
   zeroKey?: K;
+  // Indicadores/taxas (chave ou id da taxa) exibidos primeiro na tabela detalhada.
+  leadColumns?: string[];
+  // Taxas com ranking próprio (padrão: todas).
+  rankRates?: string[];
 }
 
 const fmtDec = (v: number | null) => (v === null ? '—' : v.toLocaleString('pt-BR', { maximumFractionDigits: 1 }));
@@ -114,6 +118,21 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
   const chip = (product: string) =>
     product ? <span className={`chip ${product.toLowerCase()}`}>{PRODUCT_LABELS[product] ?? product}</span> : null;
 
+  // Colunas de indicadores; as de `leadColumns` (na ordem dada) vêm logo depois do nome.
+  const allCols = [
+    ...p.keys.map((k) => ({ id: k as string, label: p.labels[k], value: (g: Aggregate<K>) => metricValue(g, k) })),
+    ...p.rates.map((rt) => ({ id: rt.id, label: rt.label, value: (g: Aggregate<K>) => pct(rateValue(g, rt)) })),
+  ];
+  const lead = p.leadColumns ?? [];
+  const leadCols = lead.flatMap((id) => allCols.filter((c) => c.id === id));
+  const restCols = allCols.filter((c) => !lead.includes(c.id));
+  const cells = (cols: typeof allCols, g: Aggregate<K>) =>
+    cols.map((c) => (
+      <td key={c.id} className={c.id === p.zeroKey ? 'hc' : leadCols.includes(c) ? 'lead' : undefined}>
+        {c.value(g)}
+      </td>
+    ));
+
   const personRow = (g: (typeof personGroups)[number]) => {
     const r = g.items[0];
     const dates = g.items.map((x) => x.date).sort();
@@ -144,6 +163,7 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
             <b>{[...new Set(g.items.map((x) => x.team))].join(', ')}</b> · Líder: {r.leader} · {labelPeriod(dates[0], p.calendar)} — {labelPeriod(dates.at(-1)!, p.calendar)}
           </small>
         </td>
+        {cells(leadCols, g)}
         {p.roster && <td>{ct ? <span className={`badge contract c-${ct.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()}`}>{ct}</span> : '—'}</td>}
         <td>{workedDays(g.items, p.absences)}</td>
         <td>
@@ -155,14 +175,7 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
             '—'
           )}
         </td>
-        {p.keys.map((k) => (
-          <td key={k} className={k === p.zeroKey ? 'hc' : undefined}>
-            {metricValue(g, k)}
-          </td>
-        ))}
-        {p.rates.map((rt) => (
-          <td key={rt.id}>{pct(rateValue(g, rt))}</td>
-        ))}
+        {cells(restCols, g)}
       </tr>
     );
   };
@@ -244,7 +257,7 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
               items={people.filter((g) => g[k] !== null).map((g) => toItem(g, g[k] as number, metricValue(g, k)))}
             />
           ))}
-          {p.rates.map((r) => (
+          {p.rates.filter((r) => !p.rankRates || p.rankRates.includes(r.id)).map((r) => (
             <Ranking
               key={r.id}
               title={r.label}
@@ -308,14 +321,16 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
               <thead>
                 <tr>
                   <th>{tableMode === 'leader' ? 'Líder' : 'Pessoa'}</th>
+                  {leadCols.map((c) => (
+                    <th key={c.id} className="lead">
+                      {c.label}
+                    </th>
+                  ))}
                   {tableMode !== 'leader' && p.roster && <th>Contrato</th>}
                   <th>Dias atuados</th>
                   {tableMode !== 'leader' && <th>Ausências</th>}
-                  {p.keys.map((k) => (
-                    <th key={k}>{p.labels[k]}</th>
-                  ))}
-                  {p.rates.map((r) => (
-                    <th key={r.id}>{r.label}</th>
+                  {restCols.map((c) => (
+                    <th key={c.id}>{c.label}</th>
                   ))}
                 </tr>
               </thead>
@@ -353,15 +368,9 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
                             <b>{[...new Set(g.items.map((x) => x.team))].join(', ')}</b> · {labelPeriod(dates[0], p.calendar)} — {labelPeriod(dates.at(-1)!, p.calendar)}
                           </small>
                         </td>
+                        {cells(leadCols, g)}
                         <td>{workedDays(g.items, p.absences)}</td>
-                        {p.keys.map((k) => (
-                          <td key={k} className={k === p.zeroKey ? 'hc' : undefined}>
-                            {metricValue(g, k)}
-                          </td>
-                        ))}
-                        {p.rates.map((rt) => (
-                          <td key={rt.id}>{pct(rateValue(g, rt))}</td>
-                        ))}
+                        {cells(restCols, g)}
                       </tr>
                     );
                   })}
