@@ -48,7 +48,8 @@ const SELLERS_SHEET_ID = 1720526380;
 // Cada coluna aceita os nomes usados no FL e no Insider (ex.: "Agendados" = "Agendas Pree").
 const CLOSER_HEADERS = [['AGENDAS DISP'], ['AGENDADOS', 'AGENDAS PREE'], ['CONFIRMADOS', 'AGENDAS CONFIR'], ['COMPARECERAM', 'CALL REALIZADAS'], ['LEVANTADAS DE MAO SOLICITADAS'], ['LEVANTADAS ATENDIDAS'], ['LEVANTADA C VENDA'], ['HEADCOUNTS']];
 const CLOSER_FIELDS = ['Agendas disp.', 'Agendados', 'Confirmados', 'Compareceram', 'Levantadas solicitadas', 'Levantadas atendidas', 'Levantada c/ venda', 'Headcounts'];
-const SDR_HEADERS = [['LIGACOES REALIZADAS'], ['ATENDERAM'], ['AGENDAS CRIADAS HOJE'], ['AGENDADOS PARA HOJE'], ['COMPARECERAM', 'CALL REALIZADAS'], ['HEADCOUNTS']];
+// Algumas abas de SDR (ex.: time do Marcelo) chamam as ligações de "Leads Abordados".
+const SDR_HEADERS = [['LIGACOES REALIZADAS', 'LEADS ABORDADOS'], ['ATENDERAM'], ['AGENDAS CRIADAS HOJE'], ['AGENDADOS PARA HOJE'], ['COMPARECERAM', 'CALL REALIZADAS'], ['HEADCOUNTS']];
 const SDR_FIELDS = ['Ligações realizadas', 'Atenderam', 'Agendas criadas hoje', 'Agendados para hoje', 'Compareceram', 'Headcounts'];
 const SOCIAL_HEADERS = [['LEADS ABORDADOS'], ['RESPONDERAM'], ['AGENDAMENTOS CRIADOS HOJE'], ['AGENDADOS PARA HOJE'], ['CALL REALIZADAS', 'COMPARECERAM'], ['HEADCOUNTS']];
 const SOCIAL_FIELDS = ['Leads abordados', 'Responderam', 'Agendamentos criados hoje', 'Agendados para hoje', 'Calls realizadas', 'Headcounts'];
@@ -358,11 +359,12 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
       }
       if (first === 'DATA') {
         const cells = row.map(norm);
-        if (cells.includes('LEADS ABORDADOS')) {
+        // Social Selling tem "Responderam"; "Leads Abordados" + "Atenderam" é bloco de SDR.
+        if (cells.includes('LEADS ABORDADOS') && cells.includes('RESPONDERAM')) {
           const columns = columnsOf(cells, SOCIAL_HEADERS);
           if (columns[0] < 0 || columns[5] < 0) errors.push(`${tab} linha ${i + 1}: bloco Social Selling sem Leads abordados ou Headcounts.`);
           else block = { kind: 'social', columns };
-        } else if (cells.includes('LIGACOES REALIZADAS')) {
+        } else if (cells.includes('LIGACOES REALIZADAS') || (cells.includes('LEADS ABORDADOS') && cells.includes('ATENDERAM'))) {
           const columns = columnsOf(cells, SDR_HEADERS);
           if (columns[0] < 0 || columns[5] < 0) errors.push(`${tab} linha ${i + 1}: bloco SDR sem Ligações ou Headcounts.`);
           else block = { kind: 'sdr', columns };

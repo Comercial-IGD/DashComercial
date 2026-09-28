@@ -147,7 +147,8 @@ async function runSync(dry = false) {
     const sourceIssues = results
       .flatMap((r) => r.issues)
       .filter((i) => !(rowKinds.has(i.kind) && i.sheetDate && keptDays.has(`${i.sellerCode}|${i.sheetDate}`) && !keptUrls.has(i.url)));
-    const allIssues = [...sourceIssues, ...closerRec.issues, ...sdrRec.issues, ...socialRec.issues, ...overlap.issues];
+    // Ausência escrita na planilha não vira mais pendência para o RH (o dia continua fora dos totais).
+    const allIssues = [...sourceIssues, ...closerRec.issues, ...sdrRec.issues, ...socialRec.issues, ...overlap.issues].filter((i) => i.kind !== 'ausencia_planilha');
     const summary = () => {
       const byKind: Record<string, number> = {};
       allIssues.forEach((i) => (byKind[i.kind] = (byKind[i.kind] || 0) + 1));
