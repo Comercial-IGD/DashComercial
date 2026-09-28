@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './dashboard.css';
 import { absenceIndex } from '@/lib/attendance';
 import { buildDemoData } from '@/lib/demoData';
@@ -42,6 +42,7 @@ const SOCIAL_RATES: RateDef<SocialKey>[] = [
 ];
 
 const CLOSER_RATES: RateDef<MetricKey>[] = [
+  { id: 'hc', label: 'Conversão para HC', num: 'headcounts', den: 'calls', minBase: 10, hint: 'Headcounts ÷ calls realizadas (compareceram)' },
   { id: 'show', label: 'Comparecimento', num: 'calls', den: 'agendados', minBase: 10, hint: 'Compareceram ÷ agendados' },
   { id: 'conversao', label: 'Conversão de levantadas', num: 'comVenda', den: 'atendidas', minBase: 10, hint: 'Levantadas com venda ÷ levantadas atendidas' },
 ];
@@ -94,6 +95,44 @@ export default function DashboardPage() {
   const actionIssues = useMemo(() => issues.filter((i) => ACTION_KINDS.includes(i.kind)), [issues]);
   const pendingCodes = useMemo(() => new Set(actionIssues.map((i) => i.sellerCode).filter(Boolean) as string[]), [actionIssues]);
 
+  // Lê as planilhas agora (não só o banco) e depois recarrega o dash.
+  const token = session?.access_token;
+  const reload = live.reload;
+  const syncingRef = useRef(false);
+  const syncNow = useCallback(async () => {
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    setSyncing(true);
+    setSyncError('');
+    try {
+      const res = await fetch('/api/sync', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      await reload();
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : String(e));
+    } finally {
+      syncingRef.current = false;
+      setSyncing(false);
+    }
+  }, [token, reload]);
+
+  // Atualização automática a cada 5 min com a aba visível. O atraso aleatório espalha abas abertas juntas;
+  // o servidor reaproveita a última leitura se outra aba acabou de sincronizar (cota do Google Sheets).
+  const autoSync = !!session && !!role && !demo;
+  useEffect(() => {
+    if (!autoSync) return;
+    let delay: ReturnType<typeof setTimeout> | undefined;
+    const interval = setInterval(() => {
+      if (document.hidden) return;
+      delay = setTimeout(syncNow, Math.random() * 30000);
+    }, 300000);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(delay);
+    };
+  }, [autoSync, syncNow]);
+
   if (!ready) return <div className="dash"><p className="empty">Carregando…</p></div>;
   if (!demo && !session) return <div className="dash"><Login onDemo={() => setDemo(buildDemoData())} /></div>;
   if (!demo && !role)
@@ -109,22 +148,6 @@ export default function DashboardPage() {
       </div>
     );
 
-  // Lê as planilhas agora (não só o banco) e depois recarrega o dash.
-  const syncNow = async () => {
-    setSyncing(true);
-    setSyncError('');
-    try {
-      const res = await fetch('/api/sync', { method: 'POST', headers: { Authorization: `Bearer ${session?.access_token}` } });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      await live.reload();
-    } catch (e) {
-      setSyncError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   const notice = demo
     ? 'DEMONSTRAÇÃO • Dados fictícios. Nada é gravado no banco.'
     : syncing
@@ -135,7 +158,7 @@ export default function DashboardPage() {
       ? `Não foi possível atualizar: ${live.error}`
       : live.loading && !live.loadedAt
         ? 'Consultando a base de dados…'
-        : `Planilhas lidas em ${live.syncedAt?.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) ?? '—'} ·${data.rows.length.toLocaleString('pt-BR')} registros de closers · ${data.sdrRows.length.toLocaleString('pt-BR')} de SDR · clique em "Atualizar agora" para buscar os lançamentos mais recentes`;
+        : `Planilhas lidas em ${live.syncedAt?.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) ?? '—'} ·${data.rows.length.toLocaleString('pt-BR')} registros de closers · ${data.sdrRows.length.toLocaleString('pt-BR')} de SDR · atualiza sozinho a cada 5 min ou em "Atualizar agora"`;
 
   const tabs: [Tab, string][] = [
     ['overview', 'Visão geral'],
@@ -259,6 +282,8 @@ export default function DashboardPage() {
             rates={CLOSER_RATES}
             rankMetrics={['calls', 'headcounts']}
             perDay="calls"
+            roster={data.roster}
+            zeroKey="headcounts"
             calendar={data.calendar}
             absences={absences}
             range={rangeView}

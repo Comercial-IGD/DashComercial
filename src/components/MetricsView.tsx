@@ -1,14 +1,14 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { labelPeriod } from '@/lib/calendar';
 import { bucket, groupBy, metricValue, pct, ratio, sum, type Aggregate, type GroupMode } from '@/lib/metrics';
 import { absencesInRange, workedDays, type AbsenceIndex } from '@/lib/attendance';
-import { ABSENCE_REASONS, type CommercialPeriod } from '@/lib/types';
+import { ABSENCE_REASONS, CONTRACT_TYPES, contractType, daysSinceStart, EVALUATION_DAYS, PRODUCT_LABELS, type CommercialPeriod, type RosterEntry } from '@/lib/types';
 import { BarChart } from './BarChart';
 import { Ranking, type RankItem } from './Ranking';
 
-type Row = { date: string; week: string; seller: string; sellerId: string; team: string; leader: string };
+type Row = { date: string; week: string; seller: string; sellerId: string; team: string; leader: string; product?: string };
 
 export interface RateDef<K extends string> {
   id: string;
@@ -33,6 +33,9 @@ interface Props<R extends Row, K extends string> {
   singlePerson: boolean;
   pendingCodes: Set<string>;
   onPending: (code: string) => void;
+  // Controle de performance (aba Closers): cadastro para contrato/21 dias e indicador que define ordem e zerados.
+  roster?: RosterEntry[];
+  zeroKey?: K;
 }
 
 const fmtDec = (v: number | null) => (v === null ? '—' : v.toLocaleString('pt-BR', { maximumFractionDigits: 1 }));
@@ -40,7 +43,9 @@ const fmtDec = (v: number | null) => (v === null ? '—' : v.toLocaleString('pt-
 export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
   const [mode, setMode] = useState<GroupMode>('monthly');
   const [metric, setMetric] = useState<K>(p.rankMetrics[0]);
-  const [tableMode, setTableMode] = useState<'seller' | 'leader'>('seller');
+  const [tableMode, setTableMode] = useState<'seller' | 'team' | 'leader'>('seller');
+  const [contract, setContract] = useState('');
+  const [onlyZero, setOnlyZero] = useState(false);
   const [rankPeriod, setRankPeriod] = useState('');
 
   const totals = useMemo(() => sum(p.rows, p.keys), [p.rows, p.keys]);
@@ -80,11 +85,88 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
     absences: absCount(g.name, g.items),
   });
 
-  const tableGroups = groupBy(p.rows, p.keys, (r) => (tableMode === 'seller' ? r.sellerId : r.leader)).sort(
-    (a, b) => (b[p.perDay] ?? -1) - (a[p.perDay] ?? -1),
-  );
+  // Na aba Closers a tabela é ordenada por HC (maior → menor); nas demais pelo indicador principal.
+  const sortKey = p.zeroKey ?? p.perDay;
+  const bySort = (a: Aggregate<K>, b: Aggregate<K>) => (b[sortKey] ?? -1) - (a[sortKey] ?? -1) || (b[p.perDay] ?? -1) - (a[p.perDay] ?? -1);
+  const rosterBy = useMemo(() => new Map((p.roster ?? []).map((x) => [x.code, x])), [p.roster]);
+  const isZero = (g: Aggregate<K>) => !!p.zeroKey && !((g[p.zeroKey] ?? 0) > 0);
+
+  const personGroups = groupBy(p.rows, p.keys, (r) => r.sellerId);
+  const filteredPeople = personGroups
+    .filter((g) => !contract || contractType(rosterBy.get(g.name)) === contract)
+    .filter((g) => !onlyZero || isZero(g))
+    .sort(bySort);
+  const zeroCount = p.zeroKey ? personGroups.filter(isZero).length : 0;
+  const tableGroups =
+    tableMode === 'leader'
+      ? groupBy(p.rows, p.keys, (r) => r.leader).sort(bySort)
+      : filteredPeople;
+  // Visão por time: pessoas agrupadas pelo time atual (último lançamento), times ordenados por HC.
+  const teamOf = (g: (typeof personGroups)[number]) => g.items.reduce((a, b) => (b.date > a.date ? b : a)).team;
+  const byTeam = new Map<string, typeof filteredPeople>();
+  filteredPeople.forEach((g) => byTeam.set(teamOf(g), [...(byTeam.get(teamOf(g)) ?? []), g]));
+  const teams = [...byTeam]
+    .map(([team, members]) => ({ team, members, agg: sum(members.flatMap((m) => m.items), p.keys) }))
+    .sort((a, b) => bySort(a.agg, b.agg));
 
   const rateValue = (agg: Aggregate<K>, r: RateDef<K>) => ratio(agg[r.num], agg[r.den]);
+  const productOf = (items: Row[]) => items.reduce((a, b) => (b.date > a.date ? b : a)).product ?? '';
+  const chip = (product: string) =>
+    product ? <span className={`chip ${product.toLowerCase()}`}>{PRODUCT_LABELS[product] ?? product}</span> : null;
+
+  const personRow = (g: (typeof personGroups)[number]) => {
+    const r = g.items[0];
+    const dates = g.items.map((x) => x.date).sort();
+    const abs = absencesInRange(p.absences, g.name, p.range.from ?? dates[0], p.range.to ?? dates.at(-1));
+    const reasons = [...new Set(abs.map((a) => ABSENCE_REASONS[a.status.reason]))];
+    const person = rosterBy.get(g.name);
+    const ct = contractType(person);
+    const day = daysSinceStart(person?.startDate);
+    const product = productOf(g.items);
+    const zero = isZero(g);
+    return (
+      <tr key={g.name} className={`${zero ? 'zero ' : ''}front ${product.toLowerCase()}`}>
+        <td>
+          {r.seller}
+          {zero && <span className="badge zero">0 HC</span>}
+          {day !== null && day >= 1 && day <= EVALUATION_DAYS && (
+            <span className="badge eval" title={`Início em ${person!.startDate!.split('-').reverse().join('/')}`}>
+              Em avaliação · dia {day}/{EVALUATION_DAYS}
+            </span>
+          )}
+          {p.pendingCodes.has(g.name) && (
+            <button className="warn" title="Há lançamentos para corrigir. Ver pendências." onClick={() => p.onPending(g.name)}>
+              ⚠
+            </button>
+          )}
+          <small>
+            {chip(product)}
+            <b>{[...new Set(g.items.map((x) => x.team))].join(', ')}</b> · Líder: {r.leader} · {labelPeriod(dates[0], p.calendar)} — {labelPeriod(dates.at(-1)!, p.calendar)}
+          </small>
+        </td>
+        {p.roster && <td>{ct ? <span className={`badge contract c-${ct.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()}`}>{ct}</span> : '—'}</td>}
+        <td>{workedDays(g.items, p.absences)}</td>
+        <td>
+          {abs.length ? (
+            <span className="badge" title={abs.map((a) => `${a.date.split('-').reverse().join('/')}: ${ABSENCE_REASONS[a.status.reason]}`).join('\n')}>
+              {abs.length}d · {reasons.join(', ')}
+            </span>
+          ) : (
+            '—'
+          )}
+        </td>
+        {p.keys.map((k) => (
+          <td key={k} className={k === p.zeroKey ? 'hc' : undefined}>
+            {metricValue(g, k)}
+          </td>
+        ))}
+        {p.rates.map((rt) => (
+          <td key={rt.id}>{pct(rateValue(g, rt))}</td>
+        ))}
+      </tr>
+    );
+  };
+  const colCount = 1 + (tableMode === 'leader' ? 1 : p.roster ? 3 : 2) + p.keys.length + p.rates.length;
 
   return (
     <>
@@ -177,24 +259,58 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
 
       <section className="panel">
         <div className="panelhead">
-          <h2>Resultados detalhados</h2>
+          <div>
+            <h2>Resultados detalhados</h2>
+            {p.zeroKey && <p className="muted">Ordenado por {p.labels[p.zeroKey].toLowerCase()}, do maior para o menor.</p>}
+          </div>
           <div className="segmented">
             <button className={tableMode === 'seller' ? 'active' : ''} onClick={() => setTableMode('seller')}>
               Pessoas
+            </button>
+            <button className={tableMode === 'team' ? 'active' : ''} onClick={() => setTableMode('team')}>
+              Times
             </button>
             <button className={tableMode === 'leader' ? 'active' : ''} onClick={() => setTableMode('leader')}>
               Líderes
             </button>
           </div>
         </div>
+        {tableMode !== 'leader' && (p.roster || p.zeroKey) && (
+          <div className="tablefilters">
+            {p.roster && (
+              <label>
+                Tipo de contrato
+                <select value={contract} onChange={(e) => setContract(e.target.value)}>
+                  <option value="">Todos</option>
+                  {CONTRACT_TYPES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {p.zeroKey && (
+              <button className={`toggle ${onlyZero ? 'active' : ''}`} aria-pressed={onlyZero} onClick={() => setOnlyZero(!onlyZero)}>
+                Só zerados (0 HC) · {zeroCount}
+              </button>
+            )}
+            <span className="legend">
+              {chip('INSIDER')}
+              {chip('FL')}
+              {chip('INGRESSOS')}
+            </span>
+          </div>
+        )}
         <div className="tablewrap">
           {tableGroups.length ? (
             <table>
               <thead>
                 <tr>
-                  <th>{tableMode === 'seller' ? 'Pessoa' : 'Líder'}</th>
+                  <th>{tableMode === 'leader' ? 'Líder' : 'Pessoa'}</th>
+                  {tableMode !== 'leader' && p.roster && <th>Contrato</th>}
                   <th>Dias atuados</th>
-                  {tableMode === 'seller' && <th>Ausências</th>}
+                  {tableMode !== 'leader' && <th>Ausências</th>}
                   {p.keys.map((k) => (
                     <th key={k}>{p.labels[k]}</th>
                   ))}
@@ -204,50 +320,55 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
                 </tr>
               </thead>
               <tbody>
-                {tableGroups.map((g) => {
-                  const r = g.items[0];
-                  const dates = g.items.map((x) => x.date).sort();
-                  const abs = tableMode === 'seller' ? absencesInRange(p.absences, g.name, p.range.from ?? dates[0], p.range.to ?? dates.at(-1)) : [];
-                  const reasons = [...new Set(abs.map((a) => ABSENCE_REASONS[a.status.reason]))];
-                  return (
-                    <tr key={g.name}>
-                      <td>
-                        {tableMode === 'seller' ? r.seller : r.leader}
-                        {tableMode === 'seller' && p.pendingCodes.has(g.name) && (
-                          <button className="warn" title="Há lançamentos para corrigir. Ver pendências." onClick={() => p.onPending(g.name)}>
-                            ⚠
-                          </button>
-                        )}
-                        <small>
-                          {labelPeriod(dates[0], p.calendar)} — {labelPeriod(dates.at(-1)!, p.calendar)} · {[...new Set(g.items.map((x) => x.team))].join(', ')}
-                          {tableMode === 'seller' && ` · Líder: ${r.leader}`}
-                        </small>
-                      </td>
-                      <td>{workedDays(g.items, p.absences)}</td>
-                      {tableMode === 'seller' && (
+                {tableMode === 'seller' && filteredPeople.map(personRow)}
+                {tableMode === 'team' &&
+                  teams.map((t) => {
+                    const product = productOf(t.members.flatMap((m) => m.items));
+                    const zeros = t.members.filter(isZero).length;
+                    return (
+                      <Fragment key={t.team}>
+                        <tr className={`teamhead front ${product.toLowerCase()}`}>
+                          <td colSpan={colCount}>
+                            {chip(product)}
+                            <b>{t.team}</b> · {t.members.length} {t.members.length === 1 ? 'pessoa' : 'pessoas'}
+                            {p.zeroKey && ` · ${metricValue(t.agg, p.zeroKey)} ${p.labels[p.zeroKey].toLowerCase()}`}
+                            {p.rates.map((rt) => ` · ${rt.label}: ${pct(rateValue(t.agg, rt))}`)}
+                            {zeros > 0 && <span className="badge zero">{zeros} zerado{zeros > 1 ? 's' : ''}</span>}
+                          </td>
+                        </tr>
+                        {t.members.map(personRow)}
+                      </Fragment>
+                    );
+                  })}
+                {tableMode === 'leader' &&
+                  tableGroups.map((g) => {
+                    const dates = g.items.map((x) => x.date).sort();
+                    const product = productOf(g.items);
+                    return (
+                      <tr key={g.name} className={`front ${product.toLowerCase()}`}>
                         <td>
-                          {abs.length ? (
-                            <span className="badge" title={abs.map((a) => `${a.date.split('-').reverse().join('/')}: ${ABSENCE_REASONS[a.status.reason]}`).join('\n')}>
-                              {abs.length}d · {reasons.join(', ')}
-                            </span>
-                          ) : (
-                            '—'
-                          )}
+                          {g.items[0].leader}
+                          <small>
+                            {chip(product)}
+                            <b>{[...new Set(g.items.map((x) => x.team))].join(', ')}</b> · {labelPeriod(dates[0], p.calendar)} — {labelPeriod(dates.at(-1)!, p.calendar)}
+                          </small>
                         </td>
-                      )}
-                      {p.keys.map((k) => (
-                        <td key={k}>{metricValue(g, k)}</td>
-                      ))}
-                      {p.rates.map((rt) => (
-                        <td key={rt.id}>{pct(rateValue(g, rt))}</td>
-                      ))}
-                    </tr>
-                  );
-                })}
+                        <td>{workedDays(g.items, p.absences)}</td>
+                        {p.keys.map((k) => (
+                          <td key={k} className={k === p.zeroKey ? 'hc' : undefined}>
+                            {metricValue(g, k)}
+                          </td>
+                        ))}
+                        {p.rates.map((rt) => (
+                          <td key={rt.id}>{pct(rateValue(g, rt))}</td>
+                        ))}
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           ) : (
-            <p className="empty">Nenhum registro encontrado.</p>
+            <p className="empty">{onlyZero ? 'Ninguém zerado no período selecionado.' : 'Nenhum registro encontrado.'}</p>
           )}
         </div>
         <p className="footnote">* soma parcial: algum dia do grupo não informou o indicador. — indica que nenhum valor foi informado.</p>

@@ -92,6 +92,32 @@
 /* Selos */
 .dash .badge{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;background:#4a2f16;color:#ffc58a;font-size:11px;font-weight:500;white-space:nowrap}
 .dash .badge.info{background:#1d3a4d;color:#9fd8f5}
+/* Controle de performance: cores por frente, zerados, contrato e avaliação de 21 dias */
+.dash{--insider:#3fbf7f;--fl:#f08a2c;--ingressos:#a06cf0}
+.dash .chip{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;color:#0d1522;background:#8ca4bf}
+.dash .chip.insider{background:var(--insider)}
+.dash .chip.fl{background:var(--fl)}
+.dash .chip.ingressos{background:var(--ingressos)}
+.dash tr.front td:first-child{border-left:4px solid transparent}
+.dash tr.front.insider td:first-child{border-left-color:var(--insider)}
+.dash tr.front.fl td:first-child{border-left-color:var(--fl)}
+.dash tr.front.ingressos td:first-child{border-left-color:var(--ingressos)}
+.dash td small b{color:#dbe6f3}
+.dash tr.zero td{background:#3a1717}
+.dash tr.zero td.hc{color:#ff8a78;font-weight:700}
+.dash td.hc{font-weight:700;color:#fff}
+.dash .badge.zero{background:#6b1f1f;color:#ffc2b8;font-weight:700}
+.dash .badge.eval{background:#1d3a4d;color:#9fd8f5}
+.dash .badge.contract{margin-left:0;background:#26364b;color:#dbe6f3}
+.dash .badge.c-supervisor{background:#3d2a4d;color:#dcb8ff}
+.dash .badge.c-variavel{background:#4a2f16;color:#ffc58a}
+.dash .badge.c-senior{background:#18413a;color:#89e8d5}
+.dash tr.teamhead td{background:#18273a;font-weight:500;text-align:left;padding:12px 14px}
+.dash tr.teamhead td b{font-size:15px;color:#fff}
+.dash .tablefilters{display:flex;flex-wrap:wrap;align-items:end;gap:14px;margin-bottom:14px}
+.dash .tablefilters select{width:auto}
+.dash .tablefilters .toggle.active{background:#6b1f1f;border-color:#a33;color:#fff}
+.dash .tablefilters .legend{margin-left:auto}
 
 /* Ranking com pódio */
 .dash .ranking{min-width:0}

@@ -48,7 +48,28 @@ export const SOCIAL_LABELS: Record<SocialKey, string> = {
   headcounts: 'Headcounts',
 };
 
-export const PRODUCT_LABELS: Record<string, string> = { FL: 'FL', INSIDER: 'Insider' };
+export const PRODUCT_LABELS: Record<string, string> = { FL: 'FL', INSIDER: 'Insider', INGRESSOS: 'Ingressos' };
+
+export const CONTRACT_TYPES = ['Júnior', 'Pleno', 'Sênior', 'Variável', 'Supervisor'] as const;
+export type ContractType = (typeof CONTRACT_TYPES)[number];
+
+// Supervisor > 100% variável > senioridade do cadastro.
+export function contractType(p: Pick<RosterEntry, 'supervisor' | 'regime' | 'seniority'> | undefined): ContractType | null {
+  if (!p) return null;
+  if (p.supervisor) return 'Supervisor';
+  if (/VARI/i.test(p.regime ?? '')) return 'Variável';
+  const s = (p.seniority ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  return s.startsWith('JUN') ? 'Júnior' : s.startsWith('PLE') ? 'Pleno' : s.startsWith('SEN') ? 'Sênior' : null;
+}
+
+export const EVALUATION_DAYS = 21;
+
+// Dias corridos desde a data de início (1 = primeiro dia).
+export function daysSinceStart(start: string | null | undefined, today = new Date()) {
+  if (!start) return null;
+  const t = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.floor((t - Date.parse(start)) / 86400000) + 1;
+}
 
 interface BaseRow {
   date: string; // yyyy-mm-dd
@@ -148,6 +169,10 @@ export interface RosterEntry {
   leader: string;
   role: string | null;
   product: string;
+  seniority?: string | null;
+  regime?: string | null;
+  supervisor?: boolean;
+  startDate?: string | null; // yyyy-mm-dd (aba Vendedores)
 }
 
 export interface DashboardData {
