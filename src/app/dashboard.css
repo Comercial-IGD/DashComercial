@@ -169,8 +169,10 @@
 
 /* Pessoas */
 .dash .person h2{margin:0}
-.dash .timeline{display:flex;gap:3px;margin:8px 0 18px}
-.dash .seg{flex-basis:0;min-width:90px;padding:8px 10px;border-radius:6px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash .rankings.teams{grid-template-columns:minmax(0,1fr)}
+.dash h2.subhead{margin:34px 0 16px;padding-top:24px;border-top:1px solid #273449}
+.dash .timeline{display:flex;gap:2px;margin:8px 0 18px;overflow:hidden}
+.dash .seg{flex-basis:0;min-width:3px;padding:8px 0;text-indent:8px;border-radius:6px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash .seg.sdr{background:#1d3a4d;color:#9fd8f5}
 .dash .seg.closer{background:#18413a;color:#89e8d5}
 .dash .person-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:24px;font-size:14px}
