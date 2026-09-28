@@ -5,6 +5,9 @@ const CLOSERS = ['Ana Martins', 'Bruno Lima', 'Camila Rocha', 'Diego Alves', 'El
 const SDRS = ['Gabriela Nunes', 'Heitor Souza', 'Isabela Prado', 'João Ribeiro'];
 const team = (i: number) => (i % 2 === 0 ? 'Equipe Horizonte' : 'Equipe Aurora');
 const leader = (i: number) => (i % 2 === 0 ? 'Marina • exemplo' : 'Rafael • exemplo');
+const PRODUCTS = ['FL', 'INSIDER', 'INGRESSOS'];
+const SENIORITY = ['Júnior', 'Pleno', 'Sênior', 'Júnior', 'Pleno', 'Júnior'];
+const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 
 export function buildDemoData(): DashboardData {
   const rows: DailyRow[] = [];
@@ -34,6 +37,7 @@ export function buildDemoData(): DashboardData {
       rows.push({
         type: 'daily',
         ...base(seller, `DEMO${i}`, i, date, d),
+        product: PRODUCTS[i % 3],
         agendas: 14,
         agendados: calls + 2,
         confirmados: calls + 1,
@@ -41,7 +45,8 @@ export function buildDemoData(): DashboardData {
         solicitadas: atendidas + 1,
         atendidas,
         comVenda: Math.floor(atendidas / 2),
-        headcounts: (d + i * 2) % 7,
+        // Felipe zerou as últimas semanas (exemplo de zerado).
+        headcounts: i === 5 && d >= 49 ? 0 : (d + i * 2) % 7,
       });
     });
     SDRS.forEach((seller, i) => {
@@ -96,7 +101,18 @@ export function buildDemoData(): DashboardData {
   }
 
   const roster: RosterEntry[] = [
-    ...CLOSERS.map((seller, i) => ({ code: `DEMO${i}`, seller, team: team(i), leader: leader(i), role: 'CLOSER', product: 'FL' })),
+    ...CLOSERS.map((seller, i) => ({
+      code: `DEMO${i}`,
+      seller,
+      team: team(i),
+      leader: leader(i),
+      role: 'CLOSER',
+      product: PRODUCTS[i % 3],
+      seniority: SENIORITY[i],
+      regime: i === 4 ? '100% variável' : 'Fixo',
+      supervisor: i === 2,
+      startDate: i === 5 ? daysAgo(9) : i === 1 ? daysAgo(19) : '2025-03-10',
+    })),
     ...SDRS.map((seller, i) => ({ code: `DEMOS${i}`, seller, team: team(i), leader: leader(i), role: i === 3 ? 'CLOSER' : 'SDR', product: 'FL' })),
   ];
 

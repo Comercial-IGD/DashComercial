@@ -118,9 +118,10 @@ export async function POST(request: NextRequest) {
   const { data } = token ? await db.auth.getUser(token) : { data: { user: null } };
   const { data: allowed } = data.user ? await db.from('app_users').select('role').eq('user_id', data.user.id).maybeSingle() : { data: null };
   if (!allowed) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-  // A cota do Google Sheets é de 60 leituras/min e cada sync faz ~40: cliques seguidos reaproveitam a última leitura.
+  // A cota do Google Sheets é de 60 leituras/min e cada sync faz ~40: cliques seguidos e a atualização
+  // automática de várias abas (a cada 5 min) reaproveitam a última leitura.
   const { data: last } = await db.from('sync_issues').select('synced_at').order('synced_at', { ascending: false }).limit(1).maybeSingle();
-  if (last?.synced_at && Date.now() - Date.parse(last.synced_at) < 120000) {
+  if (last?.synced_at && Date.now() - Date.parse(last.synced_at) < 240000) {
     return NextResponse.json({ ok: true, skipped: true, syncedAt: last.synced_at });
   }
   return runSync();
@@ -194,6 +195,10 @@ async function runSync(dry = false) {
           leader_name: p.leader,
           role: p.role,
           product: p.product,
+          seniority: p.seniority || null,
+          regime: p.regime || null,
+          supervisor: p.supervisor,
+          start_date: p.startDate,
           active: true,
           updated_at: now,
         })),

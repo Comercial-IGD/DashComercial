@@ -42,6 +42,8 @@ const ACTIVE_ROLES = ['CLOSER', 'SDR'];
 
 export const ROSTER_SPREADSHEET_ID = '1uK_C5pR1p8TTMlniSKOWAISfSSVvzPuEaCb828gdTNY';
 export const ROSTER_SHEET_ID = 187997157;
+// Aba "Vendedores" (DP): data de início, usada na contagem dos 21 dias de avaliação.
+const SELLERS_SHEET_ID = 1720526380;
 
 // Cada coluna aceita os nomes usados no FL e no Insider (ex.: "Agendados" = "Agendas Pree").
 const CLOSER_HEADERS = [['AGENDAS DISP'], ['AGENDADOS', 'AGENDAS PREE'], ['CONFIRMADOS', 'AGENDAS CONFIR'], ['COMPARECERAM', 'CALL REALIZADAS'], ['LEVANTADAS DE MAO SOLICITADAS'], ['LEVANTADAS ATENDIDAS'], ['LEVANTADA C VENDA'], ['HEADCOUNTS']];
@@ -90,6 +92,10 @@ export interface RosterPerson {
   leader: string;
   role: string;
   product: string;
+  seniority: string;
+  regime: string;
+  supervisor: boolean;
+  startDate: string | null;
 }
 
 let client: sheets_v4.Sheets | null = null;
@@ -124,6 +130,7 @@ export async function fetchRoster(): Promise<RosterPerson[]> {
     valueRenderOption: 'UNFORMATTED_VALUE',
   });
   const values = res.data.values || [];
+  const startDates = await fetchStartDates(sheets, meta.data.sheets?.find((s) => s.properties?.sheetId === SELLERS_SHEET_ID)?.properties?.title);
   const expected = ['CODIGO DO INTEGRANTE', 'NOME DO INTEGRANTE', 'PRODUTO', 'FRENTE', 'NOME DO TIME', 'CARGO', 'SENIORIDADE', 'REGIME', 'APTO PARA LEVANTADA', 'ATIVO', 'CODIGO DO LIDER', 'NOME DO LIDER', 'LIDER EM TREINAMENTO', 'SUPERVISOR'];
   if (!expected.every((h, i) => norm((values[0] || [])[i]) === h)) throw new Error('Estrutura do cadastro alterada.');
 
@@ -141,6 +148,10 @@ export async function fetchRoster(): Promise<RosterPerson[]> {
       leader: String(r[11] || '').trim(),
       role,
       product,
+      seniority: String(r[6] || '').trim(),
+      regime: String(r[7] || '').trim(),
+      supervisor: norm(r[13]) === 'TRUE',
+      startDate: startDates.get(code(r[0])) ?? null,
     };
     if (p.code && seen.has(p.code)) throw new Error('Código ativo duplicado no cadastro: ' + p.code);
     if (p.code) seen.add(p.code);
@@ -148,6 +159,27 @@ export async function fetchRoster(): Promise<RosterPerson[]> {
   }
   if (!people.length) throw new Error('Cadastro não retornou integrantes ativos.');
   return people;
+}
+
+// Código → data de início. Sem a aba (ou com cabeçalho mudado) o sync segue, só sem a contagem dos 21 dias.
+async function fetchStartDates(sheets: sheets_v4.Sheets, title: string | null | undefined) {
+  const out = new Map<string, string>();
+  if (!title) return out;
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: ROSTER_SPREADSHEET_ID,
+    range: `'${title.replace(/'/g, "''")}'!A:H`,
+    valueRenderOption: 'UNFORMATTED_VALUE',
+  });
+  const [head = [], ...rows] = res.data.values || [];
+  const codeCol = head.findIndex((h) => norm(h).startsWith('COD'));
+  const dateCol = head.findIndex((h) => norm(h) === 'DATA DE INICIO');
+  if (codeCol < 0 || dateCol < 0) return out;
+  for (const r of rows) {
+    const c = code(r[codeCol]);
+    const d = parseDate(r[dateCol]);
+    if (c && d) out.set(c, d);
+  }
+  return out;
 }
 
 function parseDate(raw: unknown) {

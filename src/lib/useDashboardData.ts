@@ -102,6 +102,10 @@ export function useDashboardData(enabled: boolean) {
         leader: p.leader_name,
         role: p.role,
         product: p.product || 'FL',
+        seniority: p.seniority ?? null,
+        regime: p.regime ?? null,
+        supervisor: !!p.supervisor,
+        startDate: p.start_date ?? null,
       }));
 
       setData({
@@ -153,10 +157,6 @@ export function useDashboardData(enabled: boolean) {
     if (!enabled) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial ao entrar
     load();
-    const interval = setInterval(() => {
-      if (!document.hidden) load();
-    }, 300000);
-    return () => clearInterval(interval);
   }, [enabled, load]);
 
   return { data, setData, loading, error, loadedAt, syncedAt, reload: load };
