@@ -30,6 +30,7 @@ const WEEKDAYS = [
 ];
 
 const SDR_RATES: RateDef<SdrKey>[] = [
+  { id: 'hc', label: 'Conversão para HC', num: 'headcounts', den: 'compareceram', minBase: 10, hint: 'Headcounts ÷ compareceram' },
   { id: 'contato', label: 'Taxa de contato', num: 'atenderam', den: 'ligacoes', minBase: 50, hint: 'Atenderam ÷ ligações realizadas' },
   { id: 'agendamento', label: 'Taxa de agendamento', num: 'agendasCriadas', den: 'atenderam', minBase: 20, hint: 'Agendas criadas ÷ atenderam' },
   { id: 'show', label: 'Comparecimento', num: 'compareceram', den: 'agendadosHoje', minBase: 10, hint: 'Compareceram ÷ agendados para o dia' },
@@ -259,8 +260,12 @@ export default function DashboardPage() {
             keys={SDR_KEYS}
             labels={SDR_LABELS}
             rates={SDR_RATES}
-            rankMetrics={['ligacoes', 'agendasCriadas']}
+            rankMetrics={['headcounts', 'agendasCriadas', 'ligacoes']}
+            rankRates={[]}
             perDay="ligacoes"
+            roster={data.roster}
+            zeroKey="headcounts"
+            leadColumns={['headcounts', 'agendasCriadas', 'compareceram', 'hc', 'show']}
             calendar={data.calendar}
             absences={absences}
             range={rangeView}
