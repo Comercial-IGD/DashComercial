@@ -106,6 +106,14 @@
 .dash tr.zero td{background:#3a1717}
 .dash tr.zero td.hc{color:#ff8a78;font-weight:700}
 .dash td.hc{font-weight:700;color:#fff}
+.dash td.hc,.dash td.lead,.dash th.lead{background:#16283d}
+.dash th.lead{color:#dbe6f3;font-weight:600}
+.dash td.lead{font-weight:600;color:#dbe6f3}
+/* Nome fixo ao rolar a tabela para o lado */
+.dash .tablewrap td:first-child,.dash .tablewrap th:first-child{position:sticky;left:0;z-index:1;background:#111d2e}
+.dash .tablewrap th:first-child{z-index:2;background:#18273a}
+.dash .tablewrap tr.zero td:first-child{background:#3a1717}
+.dash .tablewrap tr.teamhead td:first-child{position:static;background:#18273a}
 .dash .badge.zero{background:#6b1f1f;color:#ffc2b8;font-weight:700}
 .dash .badge.eval{background:#1d3a4d;color:#9fd8f5}
 .dash .badge.contract{margin-left:0;background:#26364b;color:#dbe6f3}
