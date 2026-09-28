@@ -80,6 +80,14 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
     const dates = items.map((r) => r.date).sort();
     return absencesInRange(p.absences, code, p.range.from ?? dates[0], p.range.to ?? dates.at(-1)).length;
   };
+  // Disputa entre times: soma do período do ranking por time, pelo HC (Closers) ou indicador principal.
+  const teamKey = p.zeroKey ?? p.keys.find((k) => k === 'headcounts') ?? p.rankMetrics[0];
+  const teamRank = groupBy(rankRows, p.keys, (r) => r.team).map((g) => {
+    const leaders = [...new Set(g.items.map((r) => r.leader))].join(', ');
+    const size = new Set(g.items.map((r) => r.sellerId)).size;
+    const item: RankItem = { id: g.name, name: g.name, subtitle: `Líder: ${leaders} · ${size} ${size === 1 ? 'pessoa' : 'pessoas'}`, value: 0, display: '', absences: 0 };
+    return { agg: g as Aggregate<K>, item };
+  });
   const toItem = (g: (typeof people)[number], value: number, display: string): RankItem => ({
     id: g.name,
     name: g.items[0].seller,
@@ -267,6 +275,14 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
                 .map((g) => toItem(g, rateValue(g, r)!, pct(rateValue(g, r))))}
             />
           ))}
+        </div>
+        <h2 className="subhead">Disputa entre times</h2>
+        <div className="rankings teams">
+          <Ranking
+            title={`Por ${p.labels[teamKey].toLowerCase()} realizados`}
+            limit={Infinity}
+            items={teamRank.filter((t) => t.agg[teamKey] !== null).map((t) => ({ ...t.item, value: t.agg[teamKey] as number, display: metricValue(t.agg, teamKey) }))}
+          />
         </div>
       </section>
 

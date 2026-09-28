@@ -9,8 +9,8 @@ export interface RankItem {
 
 const MEDALS = ['gold', 'silver', 'bronze'];
 
-export function Ranking({ title, items, note }: { title: string; items: RankItem[]; note?: string }) {
-  const sorted = [...items].sort((a, b) => b.value - a.value || a.name.localeCompare(b.name)).slice(0, 10);
+export function Ranking({ title, items, note, limit = 10 }: { title: string; items: RankItem[]; note?: string; limit?: number }) {
+  const sorted = [...items].sort((a, b) => b.value - a.value || a.name.localeCompare(b.name)).slice(0, limit);
   const max = Math.max(1e-9, ...sorted.map((r) => r.value));
   const top = sorted.slice(0, 3);
   const rest = sorted.slice(3);
