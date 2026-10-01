@@ -31,12 +31,14 @@ export function buildDemoData(): DashboardData {
     if (dt.getUTCDay() === 0) continue;
     const date = dt.toISOString().slice(0, 10);
     CLOSERS.forEach((seller, i) => {
-      if (i === 3 && d % 11 === 0) return;
+      if (i === 3 && (d % 11 === 0 || d >= 40)) return;
       const calls = 3 + ((d * 3 + i * 7) % 9);
       const atendidas = (d + i) % 5;
       rows.push({
         type: 'daily',
         ...base(seller, `DEMO${i}`, i, date, d),
+        // Diego saiu no meio do período (exemplo de inativo que ainda conta nos totais).
+        ...(i === 3 ? { status: 'Inativo' } : {}),
         product: PRODUCTS[i % 3],
         agendas: 14,
         agendados: calls + 2,
@@ -101,7 +103,7 @@ export function buildDemoData(): DashboardData {
   }
 
   const roster: RosterEntry[] = [
-    ...CLOSERS.map((seller, i) => ({
+    ...CLOSERS.map((seller, i) => ({ i, seller })).filter((x) => x.i !== 3).map(({ seller, i }) => ({
       code: `DEMO${i}`,
       seller,
       team: team(i),

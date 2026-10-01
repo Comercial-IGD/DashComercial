@@ -115,6 +115,7 @@
 .dash .tablewrap tr.zero td:first-child{background:#3a1717}
 .dash .tablewrap tr.teamhead td:first-child{position:static;background:#18273a}
 .dash .badge.zero{background:#6b1f1f;color:#ffc2b8;font-weight:700}
+.dash .badge.inactive{background:#2b3442;color:#aab6c6}
 .dash .badge.eval{background:#1d3a4d;color:#9fd8f5}
 .dash .badge.contract{margin-left:0;background:#26364b;color:#dbe6f3}
 .dash .badge.c-supervisor{background:#3d2a4d;color:#dcb8ff}

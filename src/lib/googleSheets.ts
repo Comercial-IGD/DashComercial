@@ -86,6 +86,8 @@ function code(v: unknown) {
 }
 
 export interface RosterPerson {
+  // Ativo em FL/Insider como closer ou SDR. Inativos só entram com os dias em que produziram.
+  active: boolean;
   code: string;
   seller: string;
   team: string;
@@ -136,12 +138,16 @@ export async function fetchRoster(): Promise<RosterPerson[]> {
   if (!expected.every((h, i) => norm((values[0] || [])[i]) === h)) throw new Error('Estrutura do cadastro alterada.');
 
   const people: RosterPerson[] = [];
+  const former: RosterPerson[] = [];
   const seen = new Set<string>();
   for (const r of values.slice(1)) {
     const product = norm(r[2]);
     const role = norm(r[5]);
-    if (!ACTIVE_PRODUCTS.includes(product) || !ACTIVE_ROLES.includes(role) || norm(r[9]) !== 'TRUE') continue;
+    const active = ACTIVE_PRODUCTS.includes(product) && ACTIVE_ROLES.includes(role) && norm(r[9]) === 'TRUE';
+    // Inativos (ou de outra frente) ficam no cadastro só para associar as abas antigas pelo código.
+    if (!active && !code(r[0])) continue;
     const p: RosterPerson = {
+      active,
       code: code(r[0]),
       seller: String(r[1] || '').trim(),
       team: String(r[4] || '').trim(),
@@ -154,11 +160,20 @@ export async function fetchRoster(): Promise<RosterPerson[]> {
       supervisor: norm(r[13]) === 'TRUE',
       startDate: startDates.get(code(r[0])) ?? null,
     };
+    if (!active) {
+      former.push(p);
+      continue;
+    }
     if (p.code && seen.has(p.code)) throw new Error('Código ativo duplicado no cadastro: ' + p.code);
     if (p.code) seen.add(p.code);
     people.push(p);
   }
   if (!people.length) throw new Error('Cadastro não retornou integrantes ativos.');
+  for (const p of former) {
+    if (seen.has(p.code)) continue;
+    seen.add(p.code);
+    people.push(p);
+  }
   return people;
 }
 
@@ -228,7 +243,9 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
   const socialRows: SocialRow[] = [];
   const errors: string[] = [];
   // Associação por nome só entre pessoas do mesmo produto (Social Selling atende os dois).
-  const pool = source.kind === 'social' ? roster : roster.filter((p) => p.product === source.product);
+  const pool = roster.filter((p) => p.active && (source.kind === 'social' || p.product === source.product));
+  const sheetOwner = roster.find((p) => p.code && p.code === source.leaderCode);
+  const formers: RosterPerson[] = [];
   const issues: SyncIssue[] = [];
   const link = (sheetId: number, row?: number) =>
     // gid na query sobrevive a redirecionamentos de login; a linha vai só no fragmento,
@@ -245,11 +262,31 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
     const m = title.match(/-\s*(V\d{2,4})\s*$/i);
 
     if (m) {
-      const person = roster.find((p) => p.code === code(m[1]));
-      if (!person) continue;
-      const short = nameTokens(title.slice(0, m.index).replace(/\bSDR\b/gi, ' '));
+      const listed = roster.find((p) => p.code === code(m[1]));
+      // Quem saiu do cadastro (ou foi para outra frente) entra pelo nome da aba, no time do dono da planilha.
+      const tabName = title.slice(0, m.index).replace(/[-\s]*\bSDR\b[-\s]*/gi, ' ').replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim();
+      const person: RosterPerson =
+        listed && ACTIVE_PRODUCTS.includes(listed.product)
+          ? listed
+          : {
+              active: false,
+              code: code(m[1]),
+              seller: listed?.seller || tabName || code(m[1]),
+              team: sheetOwner?.team || `Time ${owner}`,
+              leaderCode: source.leaderCode ?? '',
+              leader: sheetOwner?.seller || owner,
+              role: listed?.role || (source.kind === 'leader' ? 'CLOSER' : 'SDR'),
+              product: source.product,
+              seniority: '',
+              regime: '',
+              supervisor: false,
+              startDate: null,
+            };
+      if (!person.code) continue;
+      if (person !== listed) formers.push(person);
+      const short = nameTokens(tabName);
       const full = nameTokens(person.seller);
-      if (!short.every((t) => full.includes(t))) {
+      if (person.active && !short.every((t) => full.includes(t))) {
         issues.push({
           kind: 'cadastro',
           ...who(person),
@@ -302,7 +339,7 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
 
   if (source.kind === 'leader') {
     roster
-      .filter((p) => p.leaderCode === source.leaderCode)
+      .filter((p) => p.active && p.leaderCode === source.leaderCode)
       .filter((p) => !p.code || !selected.some((s) => s.person.code === p.code))
       .forEach((p) =>
         issues.push({
@@ -316,7 +353,7 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
       );
   }
 
-  if (!selected.length) return { closerRows, sdrRows, socialRows, issues, source: sourceName };
+  if (!selected.length) return { closerRows, sdrRows, socialRows, issues, formers, source: sourceName };
 
   const batch = await sheets.spreadsheets.values.batchGet({
     spreadsheetId: source.id,
@@ -328,6 +365,9 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
   selected.forEach((sheet, si) => {
     const p = sheet.person;
     const tab = sheet.title;
+    // Abas de inativos não geram pendências nem travam o sync.
+    const issuesBefore = issues.length;
+    const errorsBefore = errors.length;
     let week = '';
     let block: Block | null = null;
     const blanks: string[] = [];
@@ -435,6 +475,9 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
         return null;
       });
 
+      // De quem já saiu só contam os dias com produção (o resto da aba fica zerado depois da saída).
+      if (!p.active && !values.some((v) => (v ?? 0) > 0)) return;
+
       const rule = (field: number, limit: number, msg: string) => {
         const v = values[field];
         const max = values[limit];
@@ -465,7 +508,7 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
         leader: SHEET_OWNERS.has(p.code) ? p.seller : p.leader,
         team: p.team,
         week: week || commercialWeek(date),
-        status: 'Ativo',
+        status: p.active ? 'Ativo' : 'Inativo',
         product: tabProduct,
         origin: { owner, ownerCode: source.leaderCode ?? '', url },
       };
@@ -505,6 +548,11 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
       }
     });
 
+    if (!p.active) {
+      issues.length = issuesBefore;
+      errors.length = errorsBefore;
+      return;
+    }
     if (blanks.length) {
       issues.push({
         kind: 'em_branco',
@@ -521,5 +569,5 @@ export async function fetchSource(source: SourceConfig, roster: RosterPerson[]) 
   if (errors.length) {
     throw new Error(`${sourceName}: ${errors.slice(0, 4).join(' • ')}${errors.length > 4 ? ` • e mais ${errors.length - 4} inconsistências.` : ''}`);
   }
-  return { closerRows, sdrRows, socialRows, issues, source: sourceName };
+  return { closerRows, sdrRows, socialRows, issues, formers, source: sourceName };
 }
