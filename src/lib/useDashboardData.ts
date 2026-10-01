@@ -57,7 +57,8 @@ export function useDashboardData(enabled: boolean) {
         fetchAll('attendance_status', 'start_date'),
         fetchAll('sync_issues', 'id'),
         sb.from('commercial_calendar').select('*').order('start_date'),
-        sb.from('roster').select('*').order('seller_name'),
+        // Só ativos: inativos entram no dash apenas pelas linhas de produção (status "Inativo").
+        sb.from('roster').select('*').eq('active', true).order('seller_name'),
       ]);
 
       const rows: DailyRow[] = metrics.map((r) => ({

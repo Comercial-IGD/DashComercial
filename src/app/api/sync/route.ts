@@ -156,6 +156,8 @@ async function runSync(dry = false) {
         closerRows: overlap.closers.length,
         sdrRows: overlap.sdrs.length,
         socialRows: socialRec.rows.length,
+        inactivePeople: new Set([...overlap.closers, ...overlap.sdrs, ...socialRec.rows].filter((r) => r.status === 'Inativo').map((r) => r.sellerId)).size,
+        inactiveRows: [...overlap.closers, ...overlap.sdrs, ...socialRec.rows].filter((r) => r.status === 'Inativo').length,
         // closers/SDR/social por produto
         byProduct: Object.fromEntries(
           ['FL', 'INSIDER'].map((p) => [p, [overlap.closers, overlap.sdrs, socialRec.rows].map((rows) => rows.filter((r) => r.product === p).length).join('/')]),
@@ -176,6 +178,13 @@ async function runSync(dry = false) {
       }));
       const count = (keys: string[]) => keys.reduce<Record<string, number>>((m, k) => ((m[k] = (m[k] || 0) + 1), m), {});
       const samples = {
+        // dias com produção · HC de cada inativo incluído
+        inactive: Object.fromEntries(
+          Object.entries(count([...overlap.closers, ...overlap.sdrs, ...socialRec.rows].filter((r) => r.status === 'Inativo').map((r) => `${r.seller} · ${r.sellerId} · ${r.team}`))).map(([k, days]) => [
+            k,
+            `${days}d · ${[...overlap.closers, ...overlap.sdrs].filter((r) => r.status === 'Inativo' && k.includes(`· ${r.sellerId} ·`)).reduce((s, r) => s + (r.headcounts ?? 0), 0)} HC`,
+          ]),
+        ),
         invalid: count(allIssues.filter((i) => i.kind === 'valor_invalido').map((i) => `${i.sheetValue} · ${i.seller} · ${i.source}`)),
         flSdrNonFl: count(overlap.sdrs.filter((r) => r.product === 'FL' && byCode.get(r.sellerId)?.product !== 'FL').map((r) => `${r.seller} (${byCode.get(r.sellerId)?.product}) · ${r.source}`)),
         flCloserNonFl: count(overlap.closers.filter((r) => r.product === 'FL' && byCode.get(r.sellerId)?.product !== 'FL').map((r) => `${r.seller} (${byCode.get(r.sellerId)?.product}) · ${r.source}`)),
@@ -185,9 +194,10 @@ async function runSync(dry = false) {
     }
     const db = supabaseServer();
 
+    // Quem saiu do cadastro mas tem produção nas planilhas também precisa de linha no roster (inativa).
+    const formers = results.flatMap((r) => r.formers).filter((p, i, all) => !byCode.has(p.code) && all.findIndex((x) => x.code === p.code) === i);
     const { error: rosterError } = await db.from('roster').upsert(
-      roster
-        .filter((p) => p.code)
+      [...roster.filter((p) => p.code), ...formers]
         .map((p) => ({
           code: p.code,
           seller_name: p.seller,
@@ -200,12 +210,14 @@ async function runSync(dry = false) {
           regime: p.regime || null,
           supervisor: p.supervisor,
           start_date: p.startDate,
-          active: true,
+          active: p.active,
           updated_at: now,
         })),
       { onConflict: 'code' },
     );
     if (rosterError) throw rosterError;
+    const { error: staleError } = await db.from('roster').update({ active: false }).lt('updated_at', now);
+    if (staleError) throw staleError;
 
     const base = (r: AnyRow) => ({
       date: r.date,

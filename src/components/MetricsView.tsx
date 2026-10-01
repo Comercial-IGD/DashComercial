@@ -8,7 +8,7 @@ import { ABSENCE_REASONS, CONTRACT_TYPES, contractType, daysSinceStart, EVALUATI
 import { BarChart } from './BarChart';
 import { Ranking, type RankItem } from './Ranking';
 
-type Row = { date: string; week: string; seller: string; sellerId: string; team: string; leader: string; product?: string };
+type Row = { date: string; week: string; seller: string; sellerId: string; team: string; leader: string; product?: string; status?: string };
 
 export interface RateDef<K extends string> {
   id: string;
@@ -101,7 +101,9 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
   const sortKey = p.zeroKey ?? p.perDay;
   const bySort = (a: Aggregate<K>, b: Aggregate<K>) => (b[sortKey] ?? -1) - (a[sortKey] ?? -1) || (b[p.perDay] ?? -1) - (a[p.perDay] ?? -1);
   const rosterBy = useMemo(() => new Map((p.roster ?? []).map((x) => [x.code, x])), [p.roster]);
-  const isZero = (g: Aggregate<K>) => !!p.zeroKey && !((g[p.zeroKey] ?? 0) > 0);
+  // Quem já saiu aparece com o que produziu, mas não entra na lista de zerados.
+  const isInactive = (g: { items: Row[] }) => g.items.reduce((a, b) => (b.date > a.date ? b : a)).status === 'Inativo';
+  const isZero = (g: Aggregate<K> & { items: Row[] }) => !!p.zeroKey && !isInactive(g) && !((g[p.zeroKey] ?? 0) > 0);
 
   const personGroups = groupBy(p.rows, p.keys, (r) => r.sellerId);
   const filteredPeople = personGroups
@@ -156,6 +158,7 @@ export function MetricsView<R extends Row, K extends string>(p: Props<R, K>) {
         <td>
           {r.seller}
           {zero && <span className="badge zero">0 HC</span>}
+          {isInactive(g) && <span className="badge inactive" title="Não está mais ativo no cadastro; conta o que produziu no período.">Inativo</span>}
           {day !== null && day >= 1 && day <= EVALUATION_DAYS && (
             <span className="badge eval" title={`Início em ${person!.startDate!.split('-').reverse().join('/')}`}>
               Em avaliação · dia {day}/{EVALUATION_DAYS}
